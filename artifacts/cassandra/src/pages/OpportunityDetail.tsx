@@ -97,6 +97,18 @@ export default function OpportunityDetail() {
   if (riskConfig?.liveExecutionEnabled) {
     gateReasons.push("Live execution is permanently disabled in this build.");
   }
+  if (riskConfig?.watchOnlyMode) {
+    gateReasons.push("Watch-only mode is on — observation only, no new paper trades may be opened.");
+  }
+  if (
+    typeof riskConfig?.maxSpread === "number" &&
+    typeof opp.spread === "number" &&
+    opp.spread > riskConfig.maxSpread
+  ) {
+    gateReasons.push(
+      `Bid/ask spread ${formatPercent(opp.spread)} exceeds ceiling ${formatPercent(riskConfig.maxSpread)}.`,
+    );
+  }
   if (riskConfig && proposedSize > (riskConfig.maxPositionUsd || 0)) {
     gateReasons.push(
       `Size ${formatCurrency(proposedSize)} exceeds max position ${formatCurrency(riskConfig.maxPositionUsd || 0)}.`,
@@ -144,8 +156,21 @@ export default function OpportunityDetail() {
         queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
         form.reset({ ...data, rationale: "" });
       },
-      onError: () => {
-        toast({ title: "Execution Failed", description: "Could not open paper position.", variant: "destructive" });
+      onError: (err: unknown) => {
+        // Surface the server's structured `reasons` array (from the risk
+        // gate) so the user sees exactly which gate fired even if the
+        // client-side pre-check missed it.
+        let description = "Could not open paper position.";
+        const e = err as { response?: { data?: { reasons?: Array<{ message?: string }>; error?: string } }; message?: string };
+        const reasons = e?.response?.data?.reasons;
+        if (Array.isArray(reasons) && reasons.length > 0) {
+          description = reasons.map((r) => r?.message).filter(Boolean).join(" ");
+        } else if (e?.response?.data?.error) {
+          description = e.response.data.error;
+        } else if (e?.message) {
+          description = e.message;
+        }
+        toast({ title: "Execution Failed", description, variant: "destructive" });
       }
     });
   };
