@@ -116,6 +116,54 @@ export interface DashboardSummary {
   agentStatus: DashboardAgentStatus;
 }
 
+export type TradePlanEntryZone = {
+  low: number;
+  high: number;
+};
+
+export type TradePlanCashOutLadderItem = {
+  price: number;
+  fraction: number;
+};
+
+/**
+ * Concrete plan derived from the scoring pipeline.
+ */
+export interface TradePlan {
+  direction: Direction;
+  sizeUsd: number;
+  entryZone: TradePlanEntryZone;
+  cashOutLadder: TradePlanCashOutLadderItem[];
+  exitStrategy: string;
+  invalidations: string[];
+}
+
+/**
+ * High-level recommendation. `trade` = act per trade plan; `watch` =
+edge too small / signal too weak; `human_review` = at least one
+risk flag was raised and a human should adjudicate before sizing.
+
+ */
+export type RecommendedAction =
+  (typeof RecommendedAction)[keyof typeof RecommendedAction];
+
+export const RecommendedAction = {
+  trade: "trade",
+  watch: "watch",
+  human_review: "human_review",
+} as const;
+
+/**
+ * active = updated in the last 5 minutes; stale otherwise.
+ */
+export type OpportunityStatus =
+  (typeof OpportunityStatus)[keyof typeof OpportunityStatus];
+
+export const OpportunityStatus = {
+  active: "active",
+  stale: "stale",
+} as const;
+
 export interface Opportunity {
   id: number;
   /** Stable identifier within the source */
@@ -138,6 +186,14 @@ export interface Opportunity {
   /** Suggested Kelly bankroll fraction (0-1, capped) */
   kellyFraction: number;
   suggestedDirection: Direction;
+  recommendedAction: RecommendedAction;
+  /** First observed/inferred fact that drives the thesis. */
+  keyReason?: string | null;
+  /** Short reference to a similar prior episode if known. */
+  historicalParallel?: string | null;
+  /** active = updated in the last 5 minutes; stale otherwise. */
+  status: OpportunityStatus;
+  tradePlan: TradePlan;
   url?: string | null;
   updatedAt: string;
 }

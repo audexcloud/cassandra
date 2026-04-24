@@ -99,7 +99,7 @@ export default function OpenClaw() {
         
         <Button 
           onClick={handleRunCycle} 
-          disabled={runCycleMutation.isPending || status.running}
+          disabled={runCycleMutation.isPending}
           className="uppercase font-bold tracking-wider"
         >
           {status.running ? (

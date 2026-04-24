@@ -3,7 +3,7 @@ import { Link, useParams } from "wouter";
 import { formatPercent, formatCurrency, formatDateTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, ArrowLeft, ExternalLink, Activity, Info, ShieldAlert, LineChart, Hand } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Activity, Info, ShieldAlert, LineChart, Hand, Target, Eye, ArrowUpRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -296,7 +296,101 @@ export default function OpportunityDetail() {
           </div>
           
           <Separator className="my-8" />
-          
+
+          <div className="space-y-4">
+            <h2 className="text-lg font-bold uppercase tracking-wider flex items-center text-primary">
+              <Target className="w-5 h-5 mr-2" /> Trade Plan
+              {(() => {
+                const a = opp.recommendedAction;
+                const ActionIcon = a === "trade" ? ArrowUpRight : a === "watch" ? Eye : ShieldAlert;
+                const cls =
+                  a === "trade"
+                    ? "border-primary/50 text-primary bg-primary/10"
+                    : a === "watch"
+                      ? "border-muted-foreground/30 text-muted-foreground bg-muted/30"
+                      : "border-destructive/50 text-destructive bg-destructive/10";
+                return (
+                  <Badge variant="outline" className={`ml-3 uppercase text-[10px] rounded-sm ${cls}`}>
+                    <ActionIcon className="w-3 h-3 mr-1" />
+                    {a === "human_review" ? "Human Review" : a}
+                  </Badge>
+                );
+              })()}
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Card className="bg-card/30 border-border/30">
+                <CardHeader className="pb-2 border-b border-border/30">
+                  <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Entry Plan
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 space-y-2 text-sm font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Side</span>
+                    <span className="uppercase font-bold">{opp.tradePlan.direction}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Suggested Size</span>
+                    <span className="font-bold">{formatCurrency(opp.tradePlan.sizeUsd)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Entry Zone</span>
+                    <span className="font-bold">
+                      {formatPercent(opp.tradePlan.entryZone.low)}–{formatPercent(opp.tradePlan.entryZone.high)}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card className="bg-card/30 border-border/30">
+                <CardHeader className="pb-2 border-b border-border/30">
+                  <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
+                    Cash-Out Ladder
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4 space-y-1 text-sm font-mono">
+                  {opp.tradePlan.cashOutLadder.map((rung, i) => (
+                    <div key={i} className="flex justify-between">
+                      <span className="text-muted-foreground">Target {i + 1}</span>
+                      <span>
+                        <span className="font-bold">{formatPercent(rung.price)}</span>
+                        <span className="text-muted-foreground ml-2">
+                          scale out {Math.round(rung.fraction * 100)}%
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                  {opp.tradePlan.cashOutLadder.length === 0 && (
+                    <span className="text-muted-foreground italic">No ladder rungs.</span>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+            <Card className="bg-card/30 border-border/30">
+              <CardHeader className="pb-2 border-b border-border/30">
+                <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">
+                  Exit Strategy
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 space-y-2 text-sm">
+                <p>{opp.tradePlan.exitStrategy}</p>
+                {opp.tradePlan.invalidations.length > 0 && (
+                  <div className="pt-2 mt-2 border-t border-border/30">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                      Invalidations
+                    </div>
+                    <ul className="list-disc pl-5 space-y-1 text-xs text-muted-foreground">
+                      {opp.tradePlan.invalidations.map((inv, i) => (
+                        <li key={i}>{inv}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          <Separator className="my-8" />
+
           <div className="space-y-4">
             <h2 className="text-lg font-bold uppercase tracking-wider flex items-center">
               <Activity className="w-5 h-5 mr-2 text-muted-foreground" /> Recent Signals

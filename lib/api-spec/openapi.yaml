@@ -706,6 +706,41 @@ components:
         - alerts
         - agentStatus
 
+    TradePlan:
+      type: object
+      description: Concrete plan derived from the scoring pipeline.
+      required: [direction, sizeUsd, entryZone, cashOutLadder, exitStrategy, invalidations]
+      properties:
+        direction:
+          $ref: "#/components/schemas/Direction"
+        sizeUsd: { type: number }
+        entryZone:
+          type: object
+          required: [low, high]
+          properties:
+            low: { type: number }
+            high: { type: number }
+        cashOutLadder:
+          type: array
+          items:
+            type: object
+            required: [price, fraction]
+            properties:
+              price: { type: number }
+              fraction: { type: number }
+        exitStrategy: { type: string }
+        invalidations:
+          type: array
+          items: { type: string }
+
+    RecommendedAction:
+      type: string
+      description: |
+        High-level recommendation. `trade` = act per trade plan; `watch` =
+        edge too small / signal too weak; `human_review` = at least one
+        risk flag was raised and a human should adjudicate before sizing.
+      enum: [trade, watch, human_review]
+
     Opportunity:
       type: object
       properties:
@@ -743,6 +778,22 @@ components:
           description: Suggested Kelly bankroll fraction (0-1, capped)
         suggestedDirection:
           $ref: "#/components/schemas/Direction"
+        recommendedAction:
+          $ref: "#/components/schemas/RecommendedAction"
+        keyReason:
+          type: string
+          nullable: true
+          description: First observed/inferred fact that drives the thesis.
+        historicalParallel:
+          type: string
+          nullable: true
+          description: Short reference to a similar prior episode if known.
+        status:
+          type: string
+          enum: [active, stale]
+          description: active = updated in the last 5 minutes; stale otherwise.
+        tradePlan:
+          $ref: "#/components/schemas/TradePlan"
         url:
           type: string
           nullable: true
@@ -763,6 +814,9 @@ components:
         - liquidity
         - kellyFraction
         - suggestedDirection
+        - recommendedAction
+        - status
+        - tradePlan
         - updatedAt
 
     OpportunityDetail:

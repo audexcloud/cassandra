@@ -1,4 +1,4 @@
-import { useListOpportunities } from "@workspace/api-client-react";
+import { useListOpportunities, Domain } from "@workspace/api-client-react";
 import { Link } from "wouter";
 import { formatPercent } from "@/lib/format";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,7 +13,7 @@ export default function Opportunities() {
   const [domainFilter, setDomainFilter] = useState<string>("all");
   
   const { data: opportunities, isLoading } = useListOpportunities({
-    domain: domainFilter !== "all" ? (domainFilter as any) : undefined,
+    domain: domainFilter !== "all" ? (domainFilter as Domain) : undefined,
     limit: 100
   });
 

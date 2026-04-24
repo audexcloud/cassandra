@@ -7,6 +7,9 @@
  */
 import type { Direction } from "./direction";
 import type { Domain } from "./domain";
+import type { OpportunityStatus } from "./opportunityStatus";
+import type { RecommendedAction } from "./recommendedAction";
+import type { TradePlan } from "./tradePlan";
 
 export interface Opportunity {
   id: number;
@@ -30,6 +33,14 @@ export interface Opportunity {
   /** Suggested Kelly bankroll fraction (0-1, capped) */
   kellyFraction: number;
   suggestedDirection: Direction;
+  recommendedAction: RecommendedAction;
+  /** First observed/inferred fact that drives the thesis. */
+  keyReason?: string | null;
+  /** Short reference to a similar prior episode if known. */
+  historicalParallel?: string | null;
+  /** active = updated in the last 5 minutes; stale otherwise. */
+  status: OpportunityStatus;
+  tradePlan: TradePlan;
   url?: string | null;
   updatedAt: Date;
 }

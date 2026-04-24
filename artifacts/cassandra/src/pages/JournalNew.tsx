@@ -42,7 +42,8 @@ export default function JournalNew() {
       domain: "macro",
       question: "",
       forecastProb: 0.5,
-      horizonDays: undefined as any,
+      // horizonDays is optional in the schema; leaving it out of defaults
+      // keeps the field truly empty in the UI without a type cast.
       observedText: "",
       inferredText: "",
       speculationText: "",

@@ -1,4 +1,4 @@
-import { useListSignals } from "@workspace/api-client-react";
+import { useListSignals, Domain } from "@workspace/api-client-react";
 import { formatDateTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -13,7 +13,7 @@ export default function Signals() {
   const [kindFilter, setKindFilter] = useState<string>("all");
 
   const { data: signals, isLoading } = useListSignals({
-    domain: domainFilter !== "all" ? (domainFilter as any) : undefined,
+    domain: domainFilter !== "all" ? (domainFilter as Domain) : undefined,
     kind: kindFilter !== "all" ? kindFilter : undefined,
     limit: 100
   });

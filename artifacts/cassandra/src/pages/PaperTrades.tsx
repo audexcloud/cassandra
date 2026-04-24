@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Slider } from "@/components/ui/slider";
 import { useQueryClient } from "@tanstack/react-query";
 import { getListPaperTradesQueryKey, getGetDashboardSummaryQueryKey } from "@workspace/api-client-react";
 
@@ -23,12 +24,29 @@ export default function PaperTrades() {
   
   const [closingTradeId, setClosingTradeId] = useState<number | null>(null);
   const [closeNote, setCloseNote] = useState("");
+  // Partial cash-out: 100 = full close, anything less leaves a remainder
+  // open at the original entry. Server enforces 0 < fraction <= 1.
+  const [closePercent, setClosePercent] = useState<number>(100);
+
+  const closingTrade = closingTradeId
+    ? (trades || []).find((t) => t.id === closingTradeId) ?? null
+    : null;
+  const closeFraction = Math.max(0.01, Math.min(1, closePercent / 100));
+  const closeSizeUsd = closingTrade
+    ? Number((closingTrade.sizeUsd * closeFraction).toFixed(2))
+    : 0;
+  const remainderSizeUsd = closingTrade
+    ? Number((closingTrade.sizeUsd - closeSizeUsd).toFixed(2))
+    : 0;
 
   const handleCloseConfirm = () => {
     if (!closingTradeId) return;
-    
+
     closeTradeMutation.mutate(
-      { id: closingTradeId, data: { note: closeNote } },
+      {
+        id: closingTradeId,
+        data: { note: closeNote, closeFraction },
+      },
       {
         onSuccess: () => {
           toast({
@@ -39,6 +57,7 @@ export default function PaperTrades() {
           queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
           setClosingTradeId(null);
           setCloseNote("");
+          setClosePercent(100);
         },
         onError: (err) => {
           toast({
@@ -213,9 +232,51 @@ export default function PaperTrades() {
           
           <div className="space-y-4 py-4">
             <div className="space-y-2">
+              <div className="flex justify-between items-baseline">
+                <Label className="uppercase text-xs tracking-wider text-muted-foreground">
+                  Close Fraction
+                </Label>
+                <span className="font-mono text-sm font-bold">{closePercent}%</span>
+              </div>
+              <Slider
+                value={[closePercent]}
+                onValueChange={(v) => setClosePercent(v[0] ?? 100)}
+                min={5}
+                max={100}
+                step={5}
+                aria-label="Close fraction"
+              />
+              {closingTrade && (
+                <div className="flex justify-between text-[11px] font-mono text-muted-foreground pt-1">
+                  <span>
+                    Closing {formatCurrency(closeSizeUsd)} of {formatCurrency(closingTrade.sizeUsd)}
+                  </span>
+                  <span>
+                    {remainderSizeUsd > 0
+                      ? `Leaves ${formatCurrency(remainderSizeUsd)} open`
+                      : "Full close"}
+                  </span>
+                </div>
+              )}
+              <div className="flex gap-1 pt-1">
+                {[25, 50, 75, 100].map((pct) => (
+                  <Button
+                    key={pct}
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-[10px] flex-1"
+                    onClick={() => setClosePercent(pct)}
+                  >
+                    {pct}%
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="note" className="uppercase text-xs tracking-wider text-muted-foreground">Closing Note (Optional)</Label>
-              <Textarea 
-                id="note" 
+              <Textarea
+                id="note"
                 placeholder="Reason for closing before resolution..."
                 value={closeNote}
                 onChange={e => setCloseNote(e.target.value)}
@@ -225,9 +286,13 @@ export default function PaperTrades() {
           </div>
           
           <DialogFooter>
-            <Button variant="outline" onClick={() => setClosingTradeId(null)} className="uppercase tracking-wider">Cancel</Button>
+            <Button variant="outline" onClick={() => { setClosingTradeId(null); setClosePercent(100); }} className="uppercase tracking-wider">Cancel</Button>
             <Button variant="destructive" onClick={handleCloseConfirm} disabled={closeTradeMutation.isPending} className="uppercase tracking-wider">
-              {closeTradeMutation.isPending ? "Closing..." : "Confirm Close"}
+              {closeTradeMutation.isPending
+                ? "Closing..."
+                : closePercent === 100
+                  ? "Confirm Full Close"
+                  : `Close ${closePercent}%`}
             </Button>
           </DialogFooter>
         </DialogContent>

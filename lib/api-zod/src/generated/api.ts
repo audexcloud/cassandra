@@ -164,6 +164,40 @@ export const ListOpportunitiesResponseItem = zod.object({
     .number()
     .describe("Suggested Kelly bankroll fraction (0-1, capped)"),
   suggestedDirection: zod.enum(["yes", "no"]),
+  recommendedAction: zod
+    .enum(["trade", "watch", "human_review"])
+    .describe(
+      "High-level recommendation. `trade` = act per trade plan; `watch` =\nedge too small \/ signal too weak; `human_review` = at least one\nrisk flag was raised and a human should adjudicate before sizing.\n",
+    ),
+  keyReason: zod
+    .string()
+    .nullish()
+    .describe("First observed\/inferred fact that drives the thesis."),
+  historicalParallel: zod
+    .string()
+    .nullish()
+    .describe("Short reference to a similar prior episode if known."),
+  status: zod
+    .enum(["active", "stale"])
+    .describe("active = updated in the last 5 minutes; stale otherwise."),
+  tradePlan: zod
+    .object({
+      direction: zod.enum(["yes", "no"]),
+      sizeUsd: zod.number(),
+      entryZone: zod.object({
+        low: zod.number(),
+        high: zod.number(),
+      }),
+      cashOutLadder: zod.array(
+        zod.object({
+          price: zod.number(),
+          fraction: zod.number(),
+        }),
+      ),
+      exitStrategy: zod.string(),
+      invalidations: zod.array(zod.string()),
+    })
+    .describe("Concrete plan derived from the scoring pipeline."),
   url: zod.string().nullish(),
   updatedAt: zod.coerce.date(),
 });
@@ -207,6 +241,40 @@ export const ListTopOpportunitiesResponseItem = zod.object({
     .number()
     .describe("Suggested Kelly bankroll fraction (0-1, capped)"),
   suggestedDirection: zod.enum(["yes", "no"]),
+  recommendedAction: zod
+    .enum(["trade", "watch", "human_review"])
+    .describe(
+      "High-level recommendation. `trade` = act per trade plan; `watch` =\nedge too small \/ signal too weak; `human_review` = at least one\nrisk flag was raised and a human should adjudicate before sizing.\n",
+    ),
+  keyReason: zod
+    .string()
+    .nullish()
+    .describe("First observed\/inferred fact that drives the thesis."),
+  historicalParallel: zod
+    .string()
+    .nullish()
+    .describe("Short reference to a similar prior episode if known."),
+  status: zod
+    .enum(["active", "stale"])
+    .describe("active = updated in the last 5 minutes; stale otherwise."),
+  tradePlan: zod
+    .object({
+      direction: zod.enum(["yes", "no"]),
+      sizeUsd: zod.number(),
+      entryZone: zod.object({
+        low: zod.number(),
+        high: zod.number(),
+      }),
+      cashOutLadder: zod.array(
+        zod.object({
+          price: zod.number(),
+          fraction: zod.number(),
+        }),
+      ),
+      exitStrategy: zod.string(),
+      invalidations: zod.array(zod.string()),
+    })
+    .describe("Concrete plan derived from the scoring pipeline."),
   url: zod.string().nullish(),
   updatedAt: zod.coerce.date(),
 });
@@ -250,6 +318,40 @@ export const GetRandomOpportunityResponse = zod.object({
     .number()
     .describe("Suggested Kelly bankroll fraction (0-1, capped)"),
   suggestedDirection: zod.enum(["yes", "no"]),
+  recommendedAction: zod
+    .enum(["trade", "watch", "human_review"])
+    .describe(
+      "High-level recommendation. `trade` = act per trade plan; `watch` =\nedge too small \/ signal too weak; `human_review` = at least one\nrisk flag was raised and a human should adjudicate before sizing.\n",
+    ),
+  keyReason: zod
+    .string()
+    .nullish()
+    .describe("First observed\/inferred fact that drives the thesis."),
+  historicalParallel: zod
+    .string()
+    .nullish()
+    .describe("Short reference to a similar prior episode if known."),
+  status: zod
+    .enum(["active", "stale"])
+    .describe("active = updated in the last 5 minutes; stale otherwise."),
+  tradePlan: zod
+    .object({
+      direction: zod.enum(["yes", "no"]),
+      sizeUsd: zod.number(),
+      entryZone: zod.object({
+        low: zod.number(),
+        high: zod.number(),
+      }),
+      cashOutLadder: zod.array(
+        zod.object({
+          price: zod.number(),
+          fraction: zod.number(),
+        }),
+      ),
+      exitStrategy: zod.string(),
+      invalidations: zod.array(zod.string()),
+    })
+    .describe("Concrete plan derived from the scoring pipeline."),
   url: zod.string().nullish(),
   updatedAt: zod.coerce.date(),
 });
@@ -295,6 +397,40 @@ export const GetOpportunityResponse = zod
       .number()
       .describe("Suggested Kelly bankroll fraction (0-1, capped)"),
     suggestedDirection: zod.enum(["yes", "no"]),
+    recommendedAction: zod
+      .enum(["trade", "watch", "human_review"])
+      .describe(
+        "High-level recommendation. `trade` = act per trade plan; `watch` =\nedge too small \/ signal too weak; `human_review` = at least one\nrisk flag was raised and a human should adjudicate before sizing.\n",
+      ),
+    keyReason: zod
+      .string()
+      .nullish()
+      .describe("First observed\/inferred fact that drives the thesis."),
+    historicalParallel: zod
+      .string()
+      .nullish()
+      .describe("Short reference to a similar prior episode if known."),
+    status: zod
+      .enum(["active", "stale"])
+      .describe("active = updated in the last 5 minutes; stale otherwise."),
+    tradePlan: zod
+      .object({
+        direction: zod.enum(["yes", "no"]),
+        sizeUsd: zod.number(),
+        entryZone: zod.object({
+          low: zod.number(),
+          high: zod.number(),
+        }),
+        cashOutLadder: zod.array(
+          zod.object({
+            price: zod.number(),
+            fraction: zod.number(),
+          }),
+        ),
+        exitStrategy: zod.string(),
+        invalidations: zod.array(zod.string()),
+      })
+      .describe("Concrete plan derived from the scoring pipeline."),
     url: zod.string().nullish(),
     updatedAt: zod.coerce.date(),
   })

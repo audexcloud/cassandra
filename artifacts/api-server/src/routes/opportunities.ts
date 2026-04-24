@@ -11,6 +11,13 @@ import { db } from "@workspace/db";
 import { opportunities, signalEvents, paperTrades } from "@workspace/db";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { weightedRandomPick } from "../lib/cassandra/scoring";
+import { generateTradePlan, type ReasoningSummary } from "../lib/cassandra/pipeline";
+
+const STALE_AFTER_MS = 5 * 60 * 1000;
+// Trade-plan defaults — reflect realistic single-user paper bankroll.
+const PLAN_BANKROLL_USD = 10_000;
+const PLAN_MAX_KELLY = 0.25;
+const PLAN_MAX_POSITION_USD = 500;
 
 const router: IRouter = Router();
 
@@ -102,6 +109,41 @@ router.get("/opportunities/:id", async (req, res) => {
 });
 
 function serializeOpportunity(o: typeof opportunities.$inferSelect) {
+  // rationale is stored as jsonb (drizzle types it as `unknown`); the writer
+  // (pipeline.ts) always shapes it as ReasoningSummary, so the cast is safe.
+  const rationale = (o.rationale ?? {}) as Partial<ReasoningSummary>;
+
+  // Trade plan: derive once at serialization time so every consumer
+  // (top board, detail page, dashboard preview) sees the same plan
+  // numbers without duplicating the math in the UI layer.
+  const plan = generateTradePlan({
+    inputs: {
+      marketProb: o.marketProb,
+      modelProb: o.modelProb,
+      confidence: o.confidence,
+      liquidity: o.liquidity,
+    },
+    bankrollUsd: PLAN_BANKROLL_USD,
+    maxKellyFraction: PLAN_MAX_KELLY,
+    maxPositionUsd: PLAN_MAX_POSITION_USD,
+    invalidations: rationale.riskFlags ?? [],
+  });
+
+  // recommendedAction: human_review wins over watch; both lose to trade.
+  const riskFlags = rationale.riskFlags ?? [];
+  const observed = rationale.observed ?? [];
+  const inferred = rationale.inferred ?? [];
+  const recommendedAction: "trade" | "watch" | "human_review" =
+    riskFlags.length > 0
+      ? "human_review"
+      : o.edgeScore < 0.05
+        ? "watch"
+        : "trade";
+
+  const keyReason = observed[0] ?? inferred[0] ?? null;
+  const status: "active" | "stale" =
+    Date.now() - o.updatedAt.getTime() < STALE_AFTER_MS ? "active" : "stale";
+
   return {
     id: o.id,
     marketKey: o.marketKey,
@@ -116,6 +158,11 @@ function serializeOpportunity(o: typeof opportunities.$inferSelect) {
     liquidity: o.liquidity,
     kellyFraction: o.kellyFraction,
     suggestedDirection: o.suggestedDirection,
+    recommendedAction,
+    keyReason,
+    historicalParallel: null,
+    status,
+    tradePlan: plan,
     url: o.url,
     updatedAt: o.updatedAt.toISOString(),
   };
