@@ -30,6 +30,8 @@ export interface Opportunity {
   confidence: number;
   /** Mock liquidity (USD) */
   liquidity: number;
+  /** Bid-ask (or YES/NO) spread on the underlying market (0-1). */
+  spread: number;
   /** Suggested Kelly bankroll fraction (0-1, capped) */
   kellyFraction: number;
   suggestedDirection: Direction;

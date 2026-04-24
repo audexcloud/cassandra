@@ -10,6 +10,8 @@ export interface RiskConfig {
   killSwitchEngaged: boolean;
   /** Always false in this build; included for transparency */
   liveExecutionEnabled: boolean;
+  /** When true, no new paper trades may be opened (observation only). */
+  watchOnlyMode: boolean;
   /** Hard cap on the Kelly fraction (e.g. 0.25 = quarter-Kelly) */
   maxKellyFraction: number;
   maxPositionUsd: number;
@@ -20,5 +22,9 @@ export interface RiskConfig {
   minLiquidityUsd: number;
   /** Floor for opportunity.edgeScore; trades below it are blocked. */
   minEdgeScore: number;
+  /** Cap on opportunity.spread (0-1). Trades above it are blocked. */
+  maxSpread: number;
+  /** Fraction (0-1) of an in-the-money paper trade closed by a profit-sweep call. */
+  profitSweepFraction: number;
   updatedAt: Date;
 }

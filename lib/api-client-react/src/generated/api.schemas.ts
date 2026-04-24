@@ -183,6 +183,8 @@ export interface Opportunity {
   confidence: number;
   /** Mock liquidity (USD) */
   liquidity: number;
+  /** Bid-ask (or YES/NO) spread on the underlying market (0-1). */
+  spread: number;
   /** Suggested Kelly bankroll fraction (0-1, capped) */
   kellyFraction: number;
   suggestedDirection: Direction;
@@ -255,6 +257,16 @@ export type OpportunityDetail = Opportunity & {
   paperTrades: PaperTrade[];
 };
 
+export interface SweepPaperTradeResponse {
+  /** True if a partial close was performed; false if PnL was non-positive (or trade already closed). */
+  swept: boolean;
+  /** Fraction of the position closed by the sweep (0-1). 0 when `swept` is false. */
+  sweepFraction: number;
+  original: PaperTrade;
+  /** New open trade for the un-swept portion. Null when `swept` is false or the entire position was closed. */
+  remainder?: PaperTrade | null;
+}
+
 export interface CreatePaperTradeBody {
   opportunityId: number;
   direction: Direction;
@@ -316,6 +328,29 @@ export interface CreateJournalEntryBody {
   unknowns?: string[];
 }
 
+export type OpenClawOnDemandJobKind =
+  (typeof OpenClawOnDemandJobKind)[keyof typeof OpenClawOnDemandJobKind];
+
+export const OpenClawOnDemandJobKind = {
+  investigate_topic: "investigate_topic",
+  explain_prediction: "explain_prediction",
+  find_historical_parallels: "find_historical_parallels",
+  evaluate_market: "evaluate_market",
+  create_trade_plan: "create_trade_plan",
+} as const;
+
+/**
+ * Optional payload for on-demand jobs. Shape varies by kind; recorded as-is on the openclaw_jobs row.
+ */
+export interface OpenClawOnDemandJobBody {
+  /** Free-text topic for `investigate_topic`. */
+  topic?: string;
+  /** Target opportunity for `explain_prediction`, `evaluate_market`, `create_trade_plan`. */
+  opportunityId?: number;
+  /** Question text for `find_historical_parallels`. */
+  question?: string;
+}
+
 export type OpenClawJobStatus =
   (typeof OpenClawJobStatus)[keyof typeof OpenClawJobStatus];
 
@@ -328,7 +363,7 @@ export const OpenClawJobStatus = {
 
 export interface OpenClawJob {
   id: number;
-  /** e.g. ingest_manifold, ingest_polymarket, score_universe, refresh_signals */
+  /** One of the scheduled kinds (e.g. scan_prediction_markets, check_connector_health) or on-demand kinds (e.g. investigate_topic). */
   kind: string;
   status: OpenClawJobStatus;
   startedAt: string;
@@ -382,6 +417,8 @@ export interface RiskConfig {
   killSwitchEngaged: boolean;
   /** Always false in this build; included for transparency */
   liveExecutionEnabled: boolean;
+  /** When true, no new paper trades may be opened (observation only). */
+  watchOnlyMode: boolean;
   /** Hard cap on the Kelly fraction (e.g. 0.25 = quarter-Kelly) */
   maxKellyFraction: number;
   maxPositionUsd: number;
@@ -392,11 +429,16 @@ export interface RiskConfig {
   minLiquidityUsd: number;
   /** Floor for opportunity.edgeScore; trades below it are blocked. */
   minEdgeScore: number;
+  /** Cap on opportunity.spread (0-1). Trades above it are blocked. */
+  maxSpread: number;
+  /** Fraction (0-1) of an in-the-money paper trade closed by a profit-sweep call. */
+  profitSweepFraction: number;
   updatedAt: string;
 }
 
 export interface UpdateRiskConfigBody {
   killSwitchEngaged?: boolean;
+  watchOnlyMode?: boolean;
   /**
    * Optional human-readable reason recorded against the kill_switch_events audit row when killSwitchEngaged is toggled.
 
@@ -421,6 +463,16 @@ export interface UpdateRiskConfigBody {
   minLiquidityUsd?: number;
   /** @minimum 0 */
   minEdgeScore?: number;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  maxSpread?: number;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  profitSweepFraction?: number;
 }
 
 export interface StructuredAgentQueryBody {

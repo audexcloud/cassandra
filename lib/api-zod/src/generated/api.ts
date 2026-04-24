@@ -160,6 +160,9 @@ export const ListOpportunitiesResponseItem = zod.object({
     .number()
     .describe("Confidence in the model probability (0-1)"),
   liquidity: zod.number().describe("Mock liquidity (USD)"),
+  spread: zod
+    .number()
+    .describe("Bid-ask (or YES\/NO) spread on the underlying market (0-1)."),
   kellyFraction: zod
     .number()
     .describe("Suggested Kelly bankroll fraction (0-1, capped)"),
@@ -237,6 +240,9 @@ export const ListTopOpportunitiesResponseItem = zod.object({
     .number()
     .describe("Confidence in the model probability (0-1)"),
   liquidity: zod.number().describe("Mock liquidity (USD)"),
+  spread: zod
+    .number()
+    .describe("Bid-ask (or YES\/NO) spread on the underlying market (0-1)."),
   kellyFraction: zod
     .number()
     .describe("Suggested Kelly bankroll fraction (0-1, capped)"),
@@ -314,6 +320,9 @@ export const GetRandomOpportunityResponse = zod.object({
     .number()
     .describe("Confidence in the model probability (0-1)"),
   liquidity: zod.number().describe("Mock liquidity (USD)"),
+  spread: zod
+    .number()
+    .describe("Bid-ask (or YES\/NO) spread on the underlying market (0-1)."),
   kellyFraction: zod
     .number()
     .describe("Suggested Kelly bankroll fraction (0-1, capped)"),
@@ -393,6 +402,9 @@ export const GetOpportunityResponse = zod
       .number()
       .describe("Confidence in the model probability (0-1)"),
     liquidity: zod.number().describe("Mock liquidity (USD)"),
+    spread: zod
+      .number()
+      .describe("Bid-ask (or YES\/NO) spread on the underlying market (0-1)."),
     kellyFraction: zod
       .number()
       .describe("Suggested Kelly bankroll fraction (0-1, capped)"),
@@ -582,6 +594,61 @@ export const CreatePaperTradeBody = zod.object({
 });
 
 /**
+ * @summary Profit sweep — close a fraction of an in-the-money paper trade at the current price.
+ */
+export const SweepPaperTradeParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const SweepPaperTradeResponse = zod.object({
+  swept: zod
+    .boolean()
+    .describe(
+      "True if a partial close was performed; false if PnL was non-positive (or trade already closed).",
+    ),
+  sweepFraction: zod
+    .number()
+    .describe(
+      "Fraction of the position closed by the sweep (0-1). 0 when `swept` is false.",
+    ),
+  original: zod.object({
+    id: zod.number(),
+    opportunityId: zod.number(),
+    marketKey: zod.string(),
+    question: zod.string(),
+    direction: zod.enum(["yes", "no"]),
+    sizeUsd: zod.number(),
+    entryProb: zod.number(),
+    exitProb: zod.number().nullish(),
+    status: zod.enum(["open", "closed"]),
+    pnlUsd: zod.number().nullish(),
+    rationale: zod.string().nullish(),
+    openedAt: zod.coerce.date(),
+    closedAt: zod.coerce.date().nullish(),
+  }),
+  remainder: zod
+    .object({
+      id: zod.number(),
+      opportunityId: zod.number(),
+      marketKey: zod.string(),
+      question: zod.string(),
+      direction: zod.enum(["yes", "no"]),
+      sizeUsd: zod.number(),
+      entryProb: zod.number(),
+      exitProb: zod.number().nullish(),
+      status: zod.enum(["open", "closed"]),
+      pnlUsd: zod.number().nullish(),
+      rationale: zod.string().nullish(),
+      openedAt: zod.coerce.date(),
+      closedAt: zod.coerce.date().nullish(),
+    })
+    .nullish()
+    .describe(
+      "New open trade for the un-swept portion. Null when `swept` is false or the entire position was closed.",
+    ),
+});
+
+/**
  * @summary Close (settle) a paper trade at the current implied price
  */
 export const ClosePaperTradeParams = zod.object({
@@ -745,7 +812,7 @@ export const GetOpenClawStatusResponse = zod.object({
       kind: zod
         .string()
         .describe(
-          "e.g. ingest_manifold, ingest_polymarket, score_universe, refresh_signals",
+          "One of the scheduled kinds (e.g. scan_prediction_markets, check_connector_health) or on-demand kinds (e.g. investigate_topic).",
         ),
       status: zod.enum(["pending", "running", "ok", "error"]),
       startedAt: zod.coerce.date(),
@@ -789,7 +856,7 @@ export const ListOpenClawJobsResponseItem = zod.object({
   kind: zod
     .string()
     .describe(
-      "e.g. ingest_manifold, ingest_polymarket, score_universe, refresh_signals",
+      "One of the scheduled kinds (e.g. scan_prediction_markets, check_connector_health) or on-demand kinds (e.g. investigate_topic).",
     ),
   status: zod.enum(["pending", "running", "ok", "error"]),
   startedAt: zod.coerce.date(),
@@ -821,7 +888,7 @@ export const RunOpenClawCycleResponse = zod.object({
       kind: zod
         .string()
         .describe(
-          "e.g. ingest_manifold, ingest_polymarket, score_universe, refresh_signals",
+          "One of the scheduled kinds (e.g. scan_prediction_markets, check_connector_health) or on-demand kinds (e.g. investigate_topic).",
         ),
       status: zod.enum(["pending", "running", "ok", "error"]),
       startedAt: zod.coerce.date(),
@@ -847,6 +914,54 @@ export const RunOpenClawCycleResponse = zod.object({
 });
 
 /**
+ * @summary Invoke a named on-demand OpenClaw job (records an openclaw_jobs row and returns the result).
+ */
+export const RunOpenClawOnDemandJobParams = zod.object({
+  kind: zod.enum([
+    "investigate_topic",
+    "explain_prediction",
+    "find_historical_parallels",
+    "evaluate_market",
+    "create_trade_plan",
+  ]),
+});
+
+export const RunOpenClawOnDemandJobBody = zod
+  .object({
+    topic: zod
+      .string()
+      .optional()
+      .describe("Free-text topic for `investigate_topic`."),
+    opportunityId: zod
+      .number()
+      .optional()
+      .describe(
+        "Target opportunity for `explain_prediction`, `evaluate_market`, `create_trade_plan`.",
+      ),
+    question: zod
+      .string()
+      .optional()
+      .describe("Question text for `find_historical_parallels`."),
+  })
+  .describe(
+    "Optional payload for on-demand jobs. Shape varies by kind; recorded as-is on the openclaw_jobs row.",
+  );
+
+export const RunOpenClawOnDemandJobResponse = zod.object({
+  id: zod.number(),
+  kind: zod
+    .string()
+    .describe(
+      "One of the scheduled kinds (e.g. scan_prediction_markets, check_connector_health) or on-demand kinds (e.g. investigate_topic).",
+    ),
+  status: zod.enum(["pending", "running", "ok", "error"]),
+  startedAt: zod.coerce.date(),
+  finishedAt: zod.coerce.date().nullish(),
+  durationMs: zod.number().nullish(),
+  message: zod.string().nullish(),
+});
+
+/**
  * @summary Read current risk configuration
  */
 export const GetRiskConfigResponse = zod.object({
@@ -854,6 +969,11 @@ export const GetRiskConfigResponse = zod.object({
   liveExecutionEnabled: zod
     .boolean()
     .describe("Always false in this build; included for transparency"),
+  watchOnlyMode: zod
+    .boolean()
+    .describe(
+      "When true, no new paper trades may be opened (observation only).",
+    ),
   maxKellyFraction: zod
     .number()
     .describe("Hard cap on the Kelly fraction (e.g. 0.25 = quarter-Kelly)"),
@@ -870,6 +990,14 @@ export const GetRiskConfigResponse = zod.object({
   minEdgeScore: zod
     .number()
     .describe("Floor for opportunity.edgeScore; trades below it are blocked."),
+  maxSpread: zod
+    .number()
+    .describe("Cap on opportunity.spread (0-1). Trades above it are blocked."),
+  profitSweepFraction: zod
+    .number()
+    .describe(
+      "Fraction (0-1) of an in-the-money paper trade closed by a profit-sweep call.",
+    ),
   updatedAt: zod.coerce.date(),
 });
 
@@ -892,8 +1020,15 @@ export const updateRiskConfigBodyMinLiquidityUsdMin = 0;
 
 export const updateRiskConfigBodyMinEdgeScoreMin = 0;
 
+export const updateRiskConfigBodyMaxSpreadMin = 0;
+export const updateRiskConfigBodyMaxSpreadMax = 1;
+
+export const updateRiskConfigBodyProfitSweepFractionMin = 0;
+export const updateRiskConfigBodyProfitSweepFractionMax = 1;
+
 export const UpdateRiskConfigBody = zod.object({
   killSwitchEngaged: zod.boolean().optional(),
+  watchOnlyMode: zod.boolean().optional(),
   reason: zod
     .string()
     .max(updateRiskConfigBodyReasonMax)
@@ -924,6 +1059,16 @@ export const UpdateRiskConfigBody = zod.object({
     .number()
     .min(updateRiskConfigBodyMinEdgeScoreMin)
     .optional(),
+  maxSpread: zod
+    .number()
+    .min(updateRiskConfigBodyMaxSpreadMin)
+    .max(updateRiskConfigBodyMaxSpreadMax)
+    .optional(),
+  profitSweepFraction: zod
+    .number()
+    .min(updateRiskConfigBodyProfitSweepFractionMin)
+    .max(updateRiskConfigBodyProfitSweepFractionMax)
+    .optional(),
 });
 
 export const UpdateRiskConfigResponse = zod.object({
@@ -931,6 +1076,11 @@ export const UpdateRiskConfigResponse = zod.object({
   liveExecutionEnabled: zod
     .boolean()
     .describe("Always false in this build; included for transparency"),
+  watchOnlyMode: zod
+    .boolean()
+    .describe(
+      "When true, no new paper trades may be opened (observation only).",
+    ),
   maxKellyFraction: zod
     .number()
     .describe("Hard cap on the Kelly fraction (e.g. 0.25 = quarter-Kelly)"),
@@ -947,6 +1097,14 @@ export const UpdateRiskConfigResponse = zod.object({
   minEdgeScore: zod
     .number()
     .describe("Floor for opportunity.edgeScore; trades below it are blocked."),
+  maxSpread: zod
+    .number()
+    .describe("Cap on opportunity.spread (0-1). Trades above it are blocked."),
+  profitSweepFraction: zod
+    .number()
+    .describe(
+      "Fraction (0-1) of an in-the-money paper trade closed by a profit-sweep call.",
+    ),
   updatedAt: zod.coerce.date(),
 });
 

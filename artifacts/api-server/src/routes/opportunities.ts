@@ -156,6 +156,7 @@ function serializeOpportunity(o: typeof opportunities.$inferSelect) {
     edgeScore: o.edgeScore,
     confidence: o.confidence,
     liquidity: o.liquidity,
+    spread: o.spread,
     kellyFraction: o.kellyFraction,
     suggestedDirection: o.suggestedDirection,
     recommendedAction,

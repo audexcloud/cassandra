@@ -223,6 +223,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+  /paper-trades/{id}/sweep:
+    post:
+      operationId: sweepPaperTrade
+      tags: [paper]
+      summary: Profit sweep — close a fraction of an in-the-money paper trade at the current price.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Sweep result. Always returns the trade row; if PnL was non-positive, no close occurred and `swept` is false.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SweepPaperTradeResponse"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
   /paper-trades/{id}/close:
     post:
       operationId: closePaperTrade
@@ -366,6 +390,36 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/OpenClawStatus"
+  /openclaw/jobs/{kind}/run:
+    post:
+      operationId: runOpenClawOnDemandJob
+      tags: [openclaw]
+      summary: Invoke a named on-demand OpenClaw job (records an openclaw_jobs row and returns the result).
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/OpenClawOnDemandJobKind"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenClawOnDemandJobBody"
+      responses:
+        "200":
+          description: Job dispatched and recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenClawJob"
+        "400":
+          description: Unknown job kind or invalid body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /risk/config:
     get:
@@ -773,6 +827,9 @@ components:
         liquidity:
           type: number
           description: Mock liquidity (USD)
+        spread:
+          type: number
+          description: Bid-ask (or YES/NO) spread on the underlying market (0-1).
         kellyFraction:
           type: number
           description: Suggested Kelly bankroll fraction (0-1, capped)
@@ -812,6 +869,7 @@ components:
         - edgeScore
         - confidence
         - liquidity
+        - spread
         - kellyFraction
         - suggestedDirection
         - recommendedAction
@@ -956,6 +1014,26 @@ components:
         - status
         - openedAt
 
+    SweepPaperTradeResponse:
+      type: object
+      properties:
+        swept:
+          type: boolean
+          description: True if a partial close was performed; false if PnL was non-positive (or trade already closed).
+        sweepFraction:
+          type: number
+          description: Fraction of the position closed by the sweep (0-1). 0 when `swept` is false.
+        original:
+          $ref: "#/components/schemas/PaperTrade"
+        remainder:
+          $ref: "#/components/schemas/PaperTrade"
+          nullable: true
+          description: New open trade for the un-swept portion. Null when `swept` is false or the entire position was closed.
+      required:
+        - swept
+        - sweepFraction
+        - original
+
     CreatePaperTradeBody:
       type: object
       properties:
@@ -1075,6 +1153,29 @@ components:
         - question
         - forecastProb
 
+    OpenClawOnDemandJobKind:
+      type: string
+      enum:
+        - investigate_topic
+        - explain_prediction
+        - find_historical_parallels
+        - evaluate_market
+        - create_trade_plan
+
+    OpenClawOnDemandJobBody:
+      type: object
+      description: Optional payload for on-demand jobs. Shape varies by kind; recorded as-is on the openclaw_jobs row.
+      properties:
+        topic:
+          type: string
+          description: Free-text topic for `investigate_topic`.
+        opportunityId:
+          type: integer
+          description: Target opportunity for `explain_prediction`, `evaluate_market`, `create_trade_plan`.
+        question:
+          type: string
+          description: Question text for `find_historical_parallels`.
+
     OpenClawJob:
       type: object
       properties:
@@ -1082,7 +1183,7 @@ components:
           type: integer
         kind:
           type: string
-          description: e.g. ingest_manifold, ingest_polymarket, score_universe, refresh_signals
+          description: One of the scheduled kinds (e.g. scan_prediction_markets, check_connector_health) or on-demand kinds (e.g. investigate_topic).
         status:
           type: string
           enum: [pending, running, ok, error]
@@ -1174,6 +1275,9 @@ components:
         liveExecutionEnabled:
           type: boolean
           description: Always false in this build; included for transparency
+        watchOnlyMode:
+          type: boolean
+          description: When true, no new paper trades may be opened (observation only).
         maxKellyFraction:
           type: number
           description: Hard cap on the Kelly fraction (e.g. 0.25 = quarter-Kelly)
@@ -1190,24 +1294,35 @@ components:
         minEdgeScore:
           type: number
           description: Floor for opportunity.edgeScore; trades below it are blocked.
+        maxSpread:
+          type: number
+          description: Cap on opportunity.spread (0-1). Trades above it are blocked.
+        profitSweepFraction:
+          type: number
+          description: Fraction (0-1) of an in-the-money paper trade closed by a profit-sweep call.
         updatedAt:
           type: string
           format: date-time
       required:
         - killSwitchEngaged
         - liveExecutionEnabled
+        - watchOnlyMode
         - maxKellyFraction
         - maxPositionUsd
         - bankrollUsd
         - minConfidence
         - minLiquidityUsd
         - minEdgeScore
+        - maxSpread
+        - profitSweepFraction
         - updatedAt
 
     UpdateRiskConfigBody:
       type: object
       properties:
         killSwitchEngaged:
+          type: boolean
+        watchOnlyMode:
           type: boolean
         reason:
           type: string
@@ -1235,6 +1350,14 @@ components:
         minEdgeScore:
           type: number
           minimum: 0
+        maxSpread:
+          type: number
+          minimum: 0
+          maximum: 1
+        profitSweepFraction:
+          type: number
+          minimum: 0
+          maximum: 1
 
     StructuredAgentQueryBody:
       type: object

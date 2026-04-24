@@ -146,6 +146,35 @@ describe("evaluateRiskGate", () => {
     expect(r.allowed).toBe(false);
     expect(r.reasons.map((x) => x.code)).toContain("live_execution_blocked");
   });
+
+  it("blocks new trades when watchOnlyMode is true", () => {
+    const r = evaluateRiskGate({
+      sizeUsd: 100,
+      opportunity: baseOpp,
+      config: { ...baseCfg, watchOnlyMode: true },
+    });
+    expect(r.allowed).toBe(false);
+    expect(r.reasons.map((x) => x.code)).toContain("watch_only_mode");
+  });
+
+  it("blocks when spread exceeds maxSpread ceiling", () => {
+    const r = evaluateRiskGate({
+      sizeUsd: 100,
+      opportunity: { ...baseOpp, spread: 0.2 },
+      config: { ...baseCfg, maxSpread: 0.1 },
+    });
+    expect(r.allowed).toBe(false);
+    expect(r.reasons.map((x) => x.code)).toContain("spread_above_ceiling");
+  });
+
+  it("allows when spread is below maxSpread ceiling", () => {
+    const r = evaluateRiskGate({
+      sizeUsd: 100,
+      opportunity: { ...baseOpp, spread: 0.05 },
+      config: { ...baseCfg, maxSpread: 0.1 },
+    });
+    expect(r.allowed).toBe(true);
+  });
 });
 
 describe("weightedRandomPick", () => {

@@ -9,7 +9,7 @@ import type { OpenClawJobStatus } from "./openClawJobStatus";
 
 export interface OpenClawJob {
   id: number;
-  /** e.g. ingest_manifold, ingest_polymarket, score_universe, refresh_signals */
+  /** One of the scheduled kinds (e.g. scan_prediction_markets, check_connector_health) or on-demand kinds (e.g. investigate_topic). */
   kind: string;
   status: OpenClawJobStatus;
   startedAt: Date;

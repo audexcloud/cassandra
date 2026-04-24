@@ -23,12 +23,15 @@ function serialize(row: typeof riskConfig.$inferSelect) {
     // liveExecutionEnabled is hard-pinned to false at the response layer in
     // this build; live execution is unimplemented and intentionally so.
     liveExecutionEnabled: false,
+    watchOnlyMode: row.watchOnlyMode,
     maxKellyFraction: row.maxKellyFraction,
     maxPositionUsd: row.maxPositionUsd,
     bankrollUsd: row.bankrollUsd,
     minConfidence: row.minConfidence,
     minLiquidityUsd: row.minLiquidityUsd,
     minEdgeScore: row.minEdgeScore,
+    maxSpread: row.maxSpread,
+    profitSweepFraction: row.profitSweepFraction,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -51,12 +54,15 @@ router.patch("/risk/config", async (req, res) => {
       killSwitchEngaged: parsed.data.killSwitchEngaged ?? existing.killSwitchEngaged,
       // Refuse to flip liveExecutionEnabled regardless of payload.
       liveExecutionEnabled: false,
+      watchOnlyMode: parsed.data.watchOnlyMode ?? existing.watchOnlyMode,
       maxKellyFraction: parsed.data.maxKellyFraction ?? existing.maxKellyFraction,
       maxPositionUsd: parsed.data.maxPositionUsd ?? existing.maxPositionUsd,
       bankrollUsd: parsed.data.bankrollUsd ?? existing.bankrollUsd,
       minConfidence: parsed.data.minConfidence ?? existing.minConfidence,
       minLiquidityUsd: parsed.data.minLiquidityUsd ?? existing.minLiquidityUsd,
       minEdgeScore: parsed.data.minEdgeScore ?? existing.minEdgeScore,
+      maxSpread: parsed.data.maxSpread ?? existing.maxSpread,
+      profitSweepFraction: parsed.data.profitSweepFraction ?? existing.profitSweepFraction,
       updatedAt: new Date(),
     })
     .where(eq(riskConfig.id, existing.id))

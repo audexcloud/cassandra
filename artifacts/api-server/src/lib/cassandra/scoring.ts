@@ -131,14 +131,17 @@ export interface RiskGateInputs {
     confidence: number;
     liquidity: number;
     edgeScore: number;
+    spread?: number;
   };
   config: {
     killSwitchEngaged: boolean;
     liveExecutionEnabled: boolean;
+    watchOnlyMode?: boolean;
     maxPositionUsd: number;
     minConfidence?: number;
     minLiquidityUsd?: number;
     minEdgeScore?: number;
+    maxSpread?: number;
   };
 }
 
@@ -146,10 +149,12 @@ export interface RiskGateReason {
   code:
     | "kill_switch_engaged"
     | "live_execution_blocked"
+    | "watch_only_mode"
     | "size_exceeds_max_position"
     | "confidence_below_floor"
     | "liquidity_below_floor"
-    | "edge_below_floor";
+    | "edge_below_floor"
+    | "spread_above_ceiling";
   message: string;
 }
 
@@ -175,6 +180,13 @@ export function evaluateRiskGate(input: RiskGateInputs): RiskGateResult {
         "Live execution is permanently disabled in this build. Refusing to trade.",
     });
   }
+  if (cfg.watchOnlyMode) {
+    reasons.push({
+      code: "watch_only_mode",
+      message:
+        "Watch-only mode is on — observation only, no new paper trades may be opened.",
+    });
+  }
   if (sizeUsd > cfg.maxPositionUsd) {
     reasons.push({
       code: "size_exceeds_max_position",
@@ -197,6 +209,16 @@ export function evaluateRiskGate(input: RiskGateInputs): RiskGateResult {
     reasons.push({
       code: "edge_below_floor",
       message: `Edge score ${opp.edgeScore.toFixed(3)} is below floor ${cfg.minEdgeScore.toFixed(3)}.`,
+    });
+  }
+  if (
+    typeof cfg.maxSpread === "number" &&
+    typeof opp.spread === "number" &&
+    opp.spread > cfg.maxSpread
+  ) {
+    reasons.push({
+      code: "spread_above_ceiling",
+      message: `Market spread ${opp.spread.toFixed(3)} is above ceiling ${cfg.maxSpread.toFixed(3)}.`,
     });
   }
 

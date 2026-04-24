@@ -30,15 +30,33 @@ const CYCLE_INTERVAL_SEC = 60;
  * a per-job status board.
  */
 export const SCHEDULED_JOB_KINDS = [
-  "scan_predictions",
-  "scan_metals",
-  "scan_macro",
-  "scan_geopolitics",
+  "scan_prediction_markets",
+  "scan_social_signals",
+  "scan_policy_signals",
+  "scan_commodity_signals",
+  "scan_macro_signals",
+  "check_connector_health",
   "monitor_open_positions",
   "generate_top_10_predictions",
   "generate_daily_brief",
 ] as const;
 export type ScheduledJobKind = (typeof SCHEDULED_JOB_KINDS)[number];
+
+/**
+ * Named on-demand jobs that the operator (or the Agent surface) can invoke
+ * via POST /openclaw/jobs/:kind/run. Each invocation records its own
+ * openclaw_jobs row so the command center shows what was asked, when, and
+ * with what payload. Bodies are stub no-ops for the foundation — what
+ * matters is that the contract (existence, naming, recording) is in place.
+ */
+export const ON_DEMAND_JOB_KINDS = [
+  "investigate_topic",
+  "explain_prediction",
+  "find_historical_parallels",
+  "evaluate_market",
+  "create_trade_plan",
+] as const;
+export type OnDemandJobKind = (typeof ON_DEMAND_JOB_KINDS)[number];
 
 interface OrchestratorState {
   running: boolean;
@@ -140,6 +158,7 @@ async function ingestConnector(result: ConnectorResult, maxKelly: number): Promi
         edgeScore: score,
         confidence: market.confidence,
         liquidity: market.liquidity,
+        spread: market.spread,
         kellyFraction: kelly,
         suggestedDirection: direction,
         url: market.url ?? null,
@@ -154,6 +173,7 @@ async function ingestConnector(result: ConnectorResult, maxKelly: number): Promi
           edgeScore: score,
           confidence: market.confidence,
           liquidity: market.liquidity,
+          spread: market.spread,
           kellyFraction: kelly,
           suggestedDirection: direction,
           rationale: market.rationale,
@@ -366,7 +386,20 @@ async function runScheduledJobs(): Promise<void> {
     const id = await recordJobStart(kind);
     try {
       let message = `${kind} ok`;
-      if (kind === "generate_daily_brief") {
+      if (kind === "check_connector_health") {
+        // Real work: poll healthCheck() on every connector and surface any
+        // degraded/error state on the job row.
+        const results: string[] = [];
+        for (const c of connectors) {
+          try {
+            const h = await c.healthCheck();
+            results.push(`${c.name}=${h.status}`);
+          } catch (err) {
+            results.push(`${c.name}=error(${err instanceof Error ? err.message : String(err)})`);
+          }
+        }
+        message = `health: ${results.join(", ")}`;
+      } else if (kind === "generate_daily_brief") {
         state.lastDailyBriefAt = new Date();
         message = `${kind} ok (brief generated at ${state.lastDailyBriefAt.toISOString()})`;
       }
@@ -380,6 +413,49 @@ async function runScheduledJobs(): Promise<void> {
       );
       logger.warn({ kind, err }, "scheduled job failed");
     }
+  }
+}
+
+/**
+ * Invoke a named on-demand job. Records an openclaw_jobs row with the kind
+ * and payload, runs the (stubbed) body, and returns the finished row id.
+ * Bodies are intentionally no-op summaries for the foundation — the
+ * contract that matters is "the job exists, was asked for, and was
+ * recorded with its payload".
+ */
+export async function runOnDemandJob(
+  kind: OnDemandJobKind,
+  payload: Record<string, unknown> | undefined,
+): Promise<number> {
+  const start = new Date();
+  const summary = (() => {
+    const p = payload ?? {};
+    switch (kind) {
+      case "investigate_topic":
+        return `investigate_topic topic="${String(p.topic ?? "")}"`;
+      case "explain_prediction":
+        return `explain_prediction opportunityId=${p.opportunityId ?? ""}`;
+      case "find_historical_parallels":
+        return `find_historical_parallels question="${String(p.question ?? "")}"`;
+      case "evaluate_market":
+        return `evaluate_market opportunityId=${p.opportunityId ?? ""}`;
+      case "create_trade_plan":
+        return `create_trade_plan opportunityId=${p.opportunityId ?? ""}`;
+    }
+  })();
+  const id = await recordJobStart(kind);
+  try {
+    await recordJobFinish(id, "ok", start, summary);
+    await db.insert(auditLog).values({
+      actor: "user",
+      action: "openclaw.on_demand_job",
+      target: kind,
+      payload: payload ?? {},
+    });
+    return id;
+  } catch (err) {
+    await recordJobFinish(id, "error", start, err instanceof Error ? err.message : String(err));
+    throw err;
   }
 }
 

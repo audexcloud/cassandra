@@ -24,6 +24,8 @@ export interface ConnectorMarket {
   modelProb: number;
   confidence: number;
   liquidity: number;
+  /** Quoted bid/ask spread on the underlying market (0–1). */
+  spread: number;
   url?: string;
   rationale: {
     observed: string[];
@@ -63,6 +65,8 @@ interface MarketSeed {
   baseMarketProb: number;
   baseConfidence: number;
   liquidity: number;
+  /** Quoted bid/ask spread on the underlying market (0–1). Defaults to 0.02. */
+  spread?: number;
   url?: string;
   observed: string[];
   inferred: string[];
@@ -104,6 +108,7 @@ const buildMarket = (
     modelProb,
     confidence,
     liquidity: seed.liquidity,
+    spread: Math.min(1, Math.max(0, (seed.spread ?? 0.02) + noise(`spr:${seed.marketKey}`, 0.005))),
     url: seed.url,
     rationale: {
       observed: seed.observed,
@@ -425,6 +430,30 @@ const NEWS_AMBIENT_SEEDS: ConnectorSignal[] = [
     impact: 0.55,
     sentiment: 0.4,
     weight: 0.7,
+  },
+  {
+    // Suspicious wallet activity — onchain anomaly cluster the operator
+    // should be aware of even when no specific market is implicated yet.
+    domain: "geopolitics",
+    source: "onchain_mock",
+    kind: "onchain_anomaly",
+    title: "Suspicious wallet cluster front-running EU sanctions market",
+    body: "Three never-before-seen wallets opened correlated NO positions worth $84k on Polymarket EU-sanctions market in the past 4 hours. Funded from a freshly tumbled source.",
+    impact: 0.6,
+    sentiment: -0.4,
+    weight: 0.8,
+  },
+  {
+    // Viral X (Twitter) narrative cluster — social signal that often
+    // precedes prediction-market repricing on geopolitical questions.
+    domain: "geopolitics",
+    source: "x_mock",
+    kind: "social_cluster",
+    title: "Viral X narrative cluster: 'ceasefire imminent' (engagement +6×)",
+    body: "Cluster of 412 accounts (38% verified) posting near-identical phrasing about an imminent Middle East ceasefire. Engagement velocity 6.1× the topic 30-day baseline; sentiment net positive.",
+    impact: 0.5,
+    sentiment: 0.3,
+    weight: 0.65,
   },
 ];
 

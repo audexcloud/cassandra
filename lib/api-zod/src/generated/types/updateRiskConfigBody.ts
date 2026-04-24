@@ -8,6 +8,7 @@
 
 export interface UpdateRiskConfigBody {
   killSwitchEngaged?: boolean;
+  watchOnlyMode?: boolean;
   /**
    * Optional human-readable reason recorded against the kill_switch_events audit row when killSwitchEngaged is toggled.
 
@@ -32,4 +33,14 @@ export interface UpdateRiskConfigBody {
   minLiquidityUsd?: number;
   /** @minimum 0 */
   minEdgeScore?: number;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  maxSpread?: number;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  profitSweepFraction?: number;
 }

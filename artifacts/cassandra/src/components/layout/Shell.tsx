@@ -50,7 +50,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   });
 
   const killEngaged = !!(risk?.killSwitchEngaged ?? summary?.killSwitchEngaged);
-  const liveOff = !(risk?.liveExecutionEnabled ?? summary?.liveExecutionEnabled ?? false);
+  const watchOnly = !!risk?.watchOnlyMode;
 
   const navItems = [
     { href: "/", label: "Dashboard", icon: BarChart2 },
@@ -117,16 +117,26 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span className="font-bold text-foreground tracking-widest uppercase">Cassandra</span>
           </div>
           <div className="ml-auto flex items-center gap-4 text-xs">
-            {/* Watch-only is always-on in this build (live execution permanently disabled). */}
-            <div className="flex items-center gap-2 text-muted-foreground" data-testid="status-watch-only">
-              <Eye className="w-3.5 h-3.5" />
-              <span className="uppercase tracking-wider">Watch-only</span>
-              {liveOff && (
+            {/* Watch-only mode toggle. When ON, no new paper trades may be opened. */}
+            <label className="flex items-center gap-2 cursor-pointer" data-testid="header-watch-only">
+              <Eye className={`w-3.5 h-3.5 ${watchOnly ? "text-primary" : "text-muted-foreground"}`} />
+              <span className={`uppercase tracking-wider ${watchOnly ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                Watch-only
+              </span>
+              <Switch
+                checked={watchOnly}
+                disabled={updateRisk.isPending}
+                onCheckedChange={(v) =>
+                  updateRisk.mutate({ data: { watchOnlyMode: v } })
+                }
+                aria-label="Watch-only mode"
+              />
+              {watchOnly && (
                 <Badge variant="outline" className="uppercase text-[10px] border-primary/40 text-primary">
                   ON
                 </Badge>
               )}
-            </div>
+            </label>
             {/* Header kill-switch toggle. Mirrors /risk so the operator can */}
             {/* engage from anywhere in the app. */}
             <label className="flex items-center gap-2 cursor-pointer" data-testid="header-kill-switch">

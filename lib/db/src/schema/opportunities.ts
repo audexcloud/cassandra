@@ -24,6 +24,7 @@ export const opportunities = pgTable(
     edgeScore: doublePrecision("edge_score").notNull(),
     confidence: doublePrecision("confidence").notNull(),
     liquidity: doublePrecision("liquidity").notNull(),
+    spread: doublePrecision("spread").notNull().default(0),
     kellyFraction: doublePrecision("kelly_fraction").notNull(),
     suggestedDirection: text("suggested_direction").notNull(),
     url: text("url"),

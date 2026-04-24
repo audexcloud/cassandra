@@ -35,6 +35,8 @@ import type {
   ListPaperTradesParams,
   ListSignalsParams,
   OpenClawJob,
+  OpenClawOnDemandJobBody,
+  OpenClawOnDemandJobKind,
   OpenClawStatus,
   Opportunity,
   OpportunityDetail,
@@ -44,6 +46,7 @@ import type {
   SignalEvent,
   StructuredAgentQueryBody,
   StructuredAgentResponse,
+  SweepPaperTradeResponse,
   UpdateRiskConfigBody,
 } from "./api.schemas";
 
@@ -815,6 +818,90 @@ export const useCreatePaperTrade = <
 };
 
 /**
+ * @summary Profit sweep — close a fraction of an in-the-money paper trade at the current price.
+ */
+export const getSweepPaperTradeUrl = (id: number) => {
+  return `/api/paper-trades/${id}/sweep`;
+};
+
+export const sweepPaperTrade = async (
+  id: number,
+  options?: RequestInit,
+): Promise<SweepPaperTradeResponse> => {
+  return customFetch<SweepPaperTradeResponse>(getSweepPaperTradeUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getSweepPaperTradeMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sweepPaperTrade>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sweepPaperTrade>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["sweepPaperTrade"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sweepPaperTrade>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return sweepPaperTrade(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SweepPaperTradeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sweepPaperTrade>>
+>;
+
+export type SweepPaperTradeMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Profit sweep — close a fraction of an in-the-money paper trade at the current price.
+ */
+export const useSweepPaperTrade = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sweepPaperTrade>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof sweepPaperTrade>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getSweepPaperTradeMutationOptions(options));
+};
+
+/**
  * @summary Close (settle) a paper trade at the current implied price
  */
 export const getClosePaperTradeUrl = (id: number) => {
@@ -1422,6 +1509,94 @@ export const useRunOpenClawCycle = <
   TContext
 > => {
   return useMutation(getRunOpenClawCycleMutationOptions(options));
+};
+
+/**
+ * @summary Invoke a named on-demand OpenClaw job (records an openclaw_jobs row and returns the result).
+ */
+export const getRunOpenClawOnDemandJobUrl = (kind: OpenClawOnDemandJobKind) => {
+  return `/api/openclaw/jobs/${kind}/run`;
+};
+
+export const runOpenClawOnDemandJob = async (
+  kind: OpenClawOnDemandJobKind,
+  openClawOnDemandJobBody?: OpenClawOnDemandJobBody,
+  options?: RequestInit,
+): Promise<OpenClawJob> => {
+  return customFetch<OpenClawJob>(getRunOpenClawOnDemandJobUrl(kind), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(openClawOnDemandJobBody),
+  });
+};
+
+export const getRunOpenClawOnDemandJobMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runOpenClawOnDemandJob>>,
+    TError,
+    { kind: OpenClawOnDemandJobKind; data: BodyType<OpenClawOnDemandJobBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runOpenClawOnDemandJob>>,
+  TError,
+  { kind: OpenClawOnDemandJobKind; data: BodyType<OpenClawOnDemandJobBody> },
+  TContext
+> => {
+  const mutationKey = ["runOpenClawOnDemandJob"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runOpenClawOnDemandJob>>,
+    { kind: OpenClawOnDemandJobKind; data: BodyType<OpenClawOnDemandJobBody> }
+  > = (props) => {
+    const { kind, data } = props ?? {};
+
+    return runOpenClawOnDemandJob(kind, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunOpenClawOnDemandJobMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runOpenClawOnDemandJob>>
+>;
+export type RunOpenClawOnDemandJobMutationBody =
+  BodyType<OpenClawOnDemandJobBody>;
+export type RunOpenClawOnDemandJobMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Invoke a named on-demand OpenClaw job (records an openclaw_jobs row and returns the result).
+ */
+export const useRunOpenClawOnDemandJob = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runOpenClawOnDemandJob>>,
+    TError,
+    { kind: OpenClawOnDemandJobKind; data: BodyType<OpenClawOnDemandJobBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runOpenClawOnDemandJob>>,
+  TError,
+  { kind: OpenClawOnDemandJobKind; data: BodyType<OpenClawOnDemandJobBody> },
+  TContext
+> => {
+  return useMutation(getRunOpenClawOnDemandJobMutationOptions(options));
 };
 
 /**
