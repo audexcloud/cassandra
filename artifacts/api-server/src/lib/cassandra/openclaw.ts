@@ -9,6 +9,7 @@
 import { db } from "@workspace/db";
 import {
   opportunities,
+  opportunityScoreSnapshots,
   signalEvents,
   openclawJobs,
   riskConfig,
@@ -33,6 +34,7 @@ import {
   runStandardBacktests,
 } from "./backtest";
 import { refreshWinnerWallets } from "./winnerWallets";
+import { tuneAmbientShiftCaps } from "./signalCapTuning";
 import { logger } from "../logger";
 
 const CYCLE_INTERVAL_SEC = 60;
@@ -71,6 +73,7 @@ export const SCHEDULED_JOB_KINDS = [
   "generate_daily_brief",
   "compute_calibration_backtest",
   "refresh_winner_wallets",
+  "tune_ambient_shift_caps",
 ] as const;
 export type ScheduledJobKind = (typeof SCHEDULED_JOB_KINDS)[number];
 
@@ -180,10 +183,21 @@ async function ingestConnector(
     // every real connector since they don't ship per-market signals).
     const matched = matchSignalsToMarket(market, ambientPool);
     matchedAmbient += matched.length;
-    const { modelProb, ambientShift } = applyMatchedSignals({
+    // Per-domain cap: the legacy global ±15pt cap was a guess. The cap
+    // applied here comes from `getAmbientShiftCap(domain)`, which
+    // prefers an empirically-tuned value over a hand-tuned default.
+    // The empirical value is the p90 of |Δ marketProb| in the
+    // `WINDOW_MINUTES` after a `signal_events` row was observed,
+    // measured against `opportunity_score_snapshots` and grouped by
+    // domain — i.e. how far markets in this domain *actually* move
+    // after a matched signal. The `tune_ambient_shift_caps` scheduled
+    // job below refreshes those numbers each cycle as more snapshots
+    // accumulate. See `signalCapTuning.ts` for the full derivation.
+    const { modelProb, ambientShift, cap } = applyMatchedSignals({
       marketProb: market.marketProb,
       marketSignals: market.signals,
       matched,
+      domain: market.domain,
     });
 
     const inputs = {
@@ -203,6 +217,7 @@ async function ingestConnector(
       marketProb: market.marketProb,
       modelProb,
       ambientShift,
+      cap,
     });
     const rationale =
       matched.length > 0
@@ -252,6 +267,18 @@ async function ingestConnector(
 
     upserted++;
 
+    // Snapshot the post-ingest scoring so the cap-tuning job has a
+    // time-series of marketProb to mine. Without these rows, we cannot
+    // measure how far a market actually moved after a matched ambient
+    // signal — the opportunities row only ever holds the latest values.
+    await db.insert(opportunityScoreSnapshots).values({
+      opportunityId: row.id,
+      marketProb: market.marketProb,
+      modelProb,
+      edgeScore: score,
+      confidence: market.confidence,
+    });
+
     if (market.signals.length > 0) {
       await db.insert(signalEvents).values(
         market.signals.map((s) => ({
@@ -294,6 +321,20 @@ async function pruneSignals(keepMostRecent = 500): Promise<void> {
     DELETE FROM signal_events
     WHERE id NOT IN (
       SELECT id FROM signal_events ORDER BY observed_at DESC LIMIT ${keepMostRecent}
+    )
+  `);
+}
+
+async function pruneScoreSnapshots(keepMostRecent = 5000): Promise<void> {
+  // Score snapshots accumulate one per (cycle × market). They're the
+  // input to the cap-tuning analysis (see signalCapTuning.ts), but we
+  // don't need unlimited history — a few days of cycles is plenty for
+  // the quantile to stabilise.
+  await db.execute(sql`
+    DELETE FROM opportunity_score_snapshots
+    WHERE id NOT IN (
+      SELECT id FROM opportunity_score_snapshots
+      ORDER BY captured_at DESC LIMIT ${keepMostRecent}
     )
   `);
 }
@@ -445,6 +486,7 @@ async function runCycleInner(): Promise<void> {
     }
 
     await pruneSignals();
+    await pruneScoreSnapshots();
 
     // Run the named scheduled jobs after ingestion. Each one gets its own
     // openclaw_jobs row so the command center shows per-job status, and
@@ -540,6 +582,22 @@ async function runScheduledJobs(): Promise<void> {
         // wallet, recompute rank, and emit any new mirror suggestions.
         const r = await refreshWinnerWallets();
         message = `wallets=${r.walletsRefreshed} snapshots=${r.snapshotsInserted} suggestions=${r.suggestionsCreated}`;
+      } else if (kind === "tune_ambient_shift_caps") {
+        // Mine signal_events × opportunity_score_snapshots to derive the
+        // per-domain empirical p90 of |Δ marketProb| in the window
+        // following each signal, and use that as the ambient-shift cap
+        // for each domain. Replaces the legacy global ±15pt guess with a
+        // number backed by how markets actually move after matched
+        // signals. Domains with too few samples keep their hand-tuned
+        // default. See `signalCapTuning.ts` for the full derivation.
+        const r = await tuneAmbientShiftCaps();
+        const summary = r.stats
+          .map(
+            (s) =>
+              `${s.domain}=${(s.recommendedCap * 100).toFixed(0)}pt(n=${s.sampleSize}/${s.source})`,
+          )
+          .join(", ");
+        message = `applied=${r.applied} ${summary}`;
       }
       await recordJobFinish(id, "ok", start, message);
     } catch (err) {

@@ -17,6 +17,10 @@
  */
 import type { ConnectorMarket, ConnectorSignal } from "./connectors";
 import { aggregateModelProb, clamp, clamp01, type RawSignal } from "./scoring";
+import {
+  FALLBACK_AMBIENT_SHIFT,
+  getAmbientShiftCap,
+} from "./signalCapTuning";
 
 /**
  * Topic keywords mapped to their canonical domain. A signal's title/body and
@@ -134,13 +138,17 @@ function buildKeywordRegex(keyword: string): RegExp {
 }
 
 /**
- * Maximum percentage-point shift a matched-ambient pool may apply to
- * `modelProb` away from `marketProb`. Per-market signals (already attached
- * upstream by a connector) are *not* subject to this cap — only the ambient
- * routing layer is, since matching is necessarily fuzzier than a direct
- * connector-attached signal.
+ * Legacy global cap retained for back-compat. The live cap is now
+ * per-domain and resolved through `getAmbientShiftCap(domain)` (see
+ * `signalCapTuning.ts` for how those numbers are derived). This constant
+ * is the *fallback* used when a caller does not pass a domain — the same
+ * value as before so behaviour does not regress in that path.
+ *
+ * Per-market signals (already attached upstream by a connector) are *not*
+ * subject to this cap — only the ambient routing layer is, since matching
+ * is necessarily fuzzier than a direct connector-attached signal.
  */
-export const MAX_AMBIENT_SHIFT = 0.15;
+export const MAX_AMBIENT_SHIFT = FALLBACK_AMBIENT_SHIFT;
 
 export interface MatchedSignal {
   signal: ConnectorSignal;
@@ -253,17 +261,25 @@ export function matchSignalsToMarket(
 /**
  * Apply a market's own (connector-attached) signals plus any matched ambient
  * signals to produce a new `modelProb`. The shift contributed by the
- * ambient layer is capped at `MAX_AMBIENT_SHIFT` so the routing layer can
- * never single-handedly move a market more than ~15 percentage points.
+ * ambient layer is capped per-domain via `getAmbientShiftCap(domain)` —
+ * see `signalCapTuning.ts` for how those numbers are derived (empirical
+ * p90 of |Δ marketProb| from `signal_events × opportunity_score_snapshots`
+ * inside a short post-signal window, with a hand-tuned default per domain
+ * when sample size is too small to trust). Callers may still pass an
+ * explicit `maxShift` to override; if neither is provided we fall back to
+ * the historical global cap so behaviour does not regress.
  */
 export function applyMatchedSignals(args: {
   marketProb: number;
   marketSignals: ConnectorSignal[];
   matched: MatchedSignal[];
+  domain?: string;
   maxShift?: number;
-}): { modelProb: number; ambientShift: number } {
+}): { modelProb: number; ambientShift: number; cap: number } {
   const { marketProb, marketSignals, matched } = args;
-  const cap = args.maxShift ?? MAX_AMBIENT_SHIFT;
+  const cap =
+    args.maxShift ??
+    (args.domain ? getAmbientShiftCap(args.domain) : MAX_AMBIENT_SHIFT);
 
   // First, the prior after the market's own signals (no cap; these are
   // upstream-attached and trusted).
@@ -278,7 +294,7 @@ export function applyMatchedSignals(args: {
       : marketProb;
 
   if (matched.length === 0) {
-    return { modelProb: baselineProb, ambientShift: 0 };
+    return { modelProb: baselineProb, ambientShift: 0, cap };
   }
 
   // Then, the contribution from matched ambient signals — each scaled by
@@ -295,7 +311,7 @@ export function applyMatchedSignals(args: {
   const cappedShift = clamp(rawAmbientShift, -cap, cap);
   const modelProb = clamp(baselineProb + cappedShift, 0.001, 0.999);
 
-  return { modelProb, ambientShift: cappedShift };
+  return { modelProb, ambientShift: cappedShift, cap };
 }
 
 /**
@@ -308,6 +324,12 @@ export function buildMatchRationale(args: {
   marketProb: number;
   modelProb: number;
   ambientShift: number;
+  /**
+   * The cap that was actually used for this market — comes from
+   * `applyMatchedSignals`'s return so the rationale shows the per-domain
+   * number rather than the global default.
+   */
+  cap?: number;
 }): { observed: string[]; inferred: string[] } {
   if (args.matched.length === 0) {
     return { observed: [], inferred: [] };
@@ -320,8 +342,9 @@ export function buildMatchRationale(args: {
     );
   const direction = args.ambientShift >= 0 ? "up" : "down";
   const ptsAbs = Math.abs(args.ambientShift * 100);
+  const cap = args.cap ?? MAX_AMBIENT_SHIFT;
   const inferred = [
-    `${args.matched.length} ambient signal(s) shifted modelProb ${direction} ${ptsAbs.toFixed(1)} pts (capped at ${(MAX_AMBIENT_SHIFT * 100).toFixed(0)}); marketProb ${(args.marketProb * 100).toFixed(1)}%, modelProb ${(args.modelProb * 100).toFixed(1)}%.`,
+    `${args.matched.length} ambient signal(s) shifted modelProb ${direction} ${ptsAbs.toFixed(1)} pts (capped at ${(cap * 100).toFixed(0)}); marketProb ${(args.marketProb * 100).toFixed(1)}%, modelProb ${(args.modelProb * 100).toFixed(1)}%.`,
   ];
   return { observed, inferred };
 }

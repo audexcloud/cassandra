@@ -5,6 +5,7 @@ import {
   matchSignalsToMarket,
   MAX_AMBIENT_SHIFT,
 } from "./signalMatching";
+import { DEFAULT_AMBIENT_SHIFT_CAPS } from "./signalCapTuning";
 import type { ConnectorMarket, ConnectorSignal } from "./connectors";
 
 const makeAmbient = (overrides: Partial<ConnectorSignal> = {}): ConnectorSignal => ({
@@ -370,8 +371,9 @@ describe("applyMatchedSignals", () => {
     expect(out.ambientShift).toBeLessThan(0);
   });
 
-  it("caps the ambient-driven shift at MAX_AMBIENT_SHIFT", () => {
-    // Pile on many highly-positive matched signals; the cap should kick in.
+  it("caps the ambient-driven shift at MAX_AMBIENT_SHIFT when no domain is given", () => {
+    // No domain passed -> falls back to the legacy global cap, exactly
+    // as before per-domain caps were introduced.
     const matched = matchSignalsToMarket(
       makeMarket(),
       Array.from({ length: 20 }, (_, i) =>
@@ -388,9 +390,57 @@ describe("applyMatchedSignals", () => {
       marketSignals: [],
       matched,
     });
-    // Should saturate at +MAX_AMBIENT_SHIFT.
     expect(out.modelProb - 0.4).toBeCloseTo(MAX_AMBIENT_SHIFT, 5);
     expect(out.ambientShift).toBeCloseTo(MAX_AMBIENT_SHIFT, 5);
+    expect(out.cap).toBe(MAX_AMBIENT_SHIFT);
+  });
+
+  it("uses the per-domain cap when domain is provided", () => {
+    // metals default cap is 0.08 — much tighter than the legacy 0.15.
+    const matched = matchSignalsToMarket(
+      makeMarket(),
+      Array.from({ length: 20 }, () =>
+        makeAmbient({ sentiment: 1, impact: 1, weight: 1 }),
+      ),
+    );
+    const out = applyMatchedSignals({
+      marketProb: 0.4,
+      marketSignals: [],
+      matched,
+      domain: "metals",
+    });
+    expect(out.cap).toBe(DEFAULT_AMBIENT_SHIFT_CAPS.metals);
+    expect(out.ambientShift).toBeCloseTo(DEFAULT_AMBIENT_SHIFT_CAPS.metals, 5);
+  });
+
+  it("looser cap for geopolitics permits wider shifts", () => {
+    const matched = matchSignalsToMarket(
+      makeMarket({
+        domain: "geopolitics",
+        question: "Will Iran-Israel ceasefire hold by July?",
+      }),
+      Array.from({ length: 20 }, () =>
+        makeAmbient({
+          domain: "geopolitics",
+          title: "Israel-Iran ceasefire holding overnight",
+          body: "Diplomatic breakthrough.",
+          sentiment: 1,
+          impact: 1,
+          weight: 1,
+        }),
+      ),
+    );
+    const out = applyMatchedSignals({
+      marketProb: 0.4,
+      marketSignals: [],
+      matched,
+      domain: "geopolitics",
+    });
+    expect(out.cap).toBe(DEFAULT_AMBIENT_SHIFT_CAPS.geopolitics);
+    expect(out.ambientShift).toBeCloseTo(
+      DEFAULT_AMBIENT_SHIFT_CAPS.geopolitics,
+      5,
+    );
   });
 
   it("respects an explicit smaller cap when supplied", () => {
