@@ -3,20 +3,35 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Cassandra — personal predictive intelligence terminal API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: dashboard
+    description: Dashboard summary aggregates
+  - name: opportunities
+    description: Prediction opportunities (markets the system has scored)
+  - name: signals
+    description: Signal feed (raw evidence + inferred edges)
+  - name: paper
+    description: Paper trading positions and P&L
+  - name: journal
+    description: Prediction journal entries
+  - name: openclaw
+    description: OpenClaw orchestrator status and jobs
+  - name: risk
+    description: Risk configuration and kill switch
+  - name: anthropic
+    description: Anthropic AI chat operations
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +39,480 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Dashboard top-level stats
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /opportunities:
+    get:
+      operationId: listOpportunities
+      tags: [opportunities]
+      summary: List opportunities with optional filters
+      parameters:
+        - name: domain
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Domain"
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: minEdge
+          in: query
+          required: false
+          description: Minimum absolute edge score (0-1)
+          schema:
+            type: number
+            format: float
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: List of opportunities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Opportunity"
+  /opportunities/top10:
+    get:
+      operationId: listTopOpportunities
+      tags: [opportunities]
+      summary: Top 10 highest-edge opportunities right now
+      responses:
+        "200":
+          description: Top 10
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Opportunity"
+  /opportunities/random:
+    get:
+      operationId: getRandomOpportunity
+      tags: [opportunities]
+      summary: A single random opportunity surfaced from the universe
+      responses:
+        "200":
+          description: One opportunity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Opportunity"
+  /opportunities/{id}:
+    get:
+      operationId: getOpportunity
+      tags: [opportunities]
+      summary: Detail view for an opportunity (with linked signals + reasoning)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Opportunity detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpportunityDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /signals:
+    get:
+      operationId: listSignals
+      tags: [signals]
+      summary: Live signal feed
+      parameters:
+        - name: domain
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/Domain"
+        - name: kind
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 100
+      responses:
+        "200":
+          description: List of signal events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SignalEvent"
+
+  /paper-trades:
+    get:
+      operationId: listPaperTrades
+      tags: [paper]
+      summary: List paper trades (open + closed)
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [open, closed, all]
+            default: all
+      responses:
+        "200":
+          description: Paper trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PaperTrade"
+    post:
+      operationId: createPaperTrade
+      tags: [paper]
+      summary: Open a paper trade against a scored opportunity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePaperTradeBody"
+      responses:
+        "201":
+          description: Paper trade opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaperTrade"
+        "400":
+          description: Validation or risk-cap rejection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /paper-trades/{id}/close:
+    post:
+      operationId: closePaperTrade
+      tags: [paper]
+      summary: Close (settle) a paper trade at the current implied price
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClosePaperTradeBody"
+      responses:
+        "200":
+          description: Closed paper trade
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaperTrade"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /journal:
+    get:
+      operationId: listJournalEntries
+      tags: [journal]
+      summary: List journal entries
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Journal entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/JournalEntry"
+    post:
+      operationId: createJournalEntry
+      tags: [journal]
+      summary: Create a journal entry (a personal call/forecast with structured rationale)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateJournalEntryBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalEntry"
+  /journal/{id}:
+    get:
+      operationId: getJournalEntry
+      tags: [journal]
+      summary: Get a journal entry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Journal entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JournalEntry"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /openclaw/status:
+    get:
+      operationId: getOpenClawStatus
+      tags: [openclaw]
+      summary: OpenClaw orchestrator current status
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenClawStatus"
+  /openclaw/jobs:
+    get:
+      operationId: listOpenClawJobs
+      tags: [openclaw]
+      summary: Recent OpenClaw job runs
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Job runs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OpenClawJob"
+  /openclaw/run:
+    post:
+      operationId: runOpenClawCycle
+      tags: [openclaw]
+      summary: Manually trigger one orchestration cycle (re-pull mock connectors, re-score)
+      responses:
+        "200":
+          description: Cycle dispatched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenClawStatus"
+
+  /risk/config:
+    get:
+      operationId: getRiskConfig
+      tags: [risk]
+      summary: Read current risk configuration
+      responses:
+        "200":
+          description: Risk config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskConfig"
+    patch:
+      operationId: updateRiskConfig
+      tags: [risk]
+      summary: Update risk configuration (kill switch, kelly fraction, max position size)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRiskConfigBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RiskConfig"
+
+  /anthropic/conversations:
+    get:
+      operationId: listAnthropicConversations
+      tags: [anthropic]
+      summary: List all conversations
+      responses:
+        "200":
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnthropicConversation"
+    post:
+      operationId: createAnthropicConversation
+      tags: [anthropic]
+      summary: Create a new conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAnthropicConversationBody"
+      responses:
+        "201":
+          description: Created conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicConversation"
+  /anthropic/conversations/{id}:
+    get:
+      operationId: getAnthropicConversation
+      tags: [anthropic]
+      summary: Get conversation with messages
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversation with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicConversationWithMessages"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicError"
+    delete:
+      operationId: deleteAnthropicConversation
+      tags: [anthropic]
+      summary: Delete a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnthropicError"
+  /anthropic/conversations/{id}/messages:
+    get:
+      operationId: listAnthropicMessages
+      tags: [anthropic]
+      summary: List messages in a conversation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AnthropicMessage"
+    post:
+      operationId: sendAnthropicMessage
+      tags: [anthropic]
+      summary: Send a message and receive an AI response (SSE stream)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendAnthropicMessageBody"
+      responses:
+        "200":
+          description: SSE stream of assistant response chunks
+          content:
+            text/event-stream: {}
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +523,575 @@ components:
       required:
         - status
 
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Domain:
+      type: string
+      description: High-level intelligence domain
+      enum:
+        - prediction_market
+        - geopolitics
+        - policy
+        - commodities
+        - metals
+        - macro
+
+    Direction:
+      type: string
+      enum: [yes, no]
+
+    DashboardSummary:
+      type: object
+      properties:
+        opportunitiesTotal:
+          type: integer
+        opportunitiesByDomain:
+          type: array
+          items:
+            type: object
+            properties:
+              domain:
+                $ref: "#/components/schemas/Domain"
+              count:
+                type: integer
+            required: [domain, count]
+        signalsLast24h:
+          type: integer
+        paperOpenCount:
+          type: integer
+        paperRealizedPnl:
+          type: number
+        paperUnrealizedPnl:
+          type: number
+        paperWinRate:
+          type: number
+          description: Closed-trade win rate (0-1)
+        topEdge:
+          type: number
+          description: Highest absolute edge in the universe right now (0-1)
+        killSwitchEngaged:
+          type: boolean
+        liveExecutionEnabled:
+          type: boolean
+          description: Always false in this build (paper-only)
+        lastCycleAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - opportunitiesTotal
+        - opportunitiesByDomain
+        - signalsLast24h
+        - paperOpenCount
+        - paperRealizedPnl
+        - paperUnrealizedPnl
+        - paperWinRate
+        - topEdge
+        - killSwitchEngaged
+        - liveExecutionEnabled
+
+    Opportunity:
+      type: object
+      properties:
+        id:
+          type: integer
+        marketKey:
+          type: string
+          description: Stable identifier within the source
+        source:
+          type: string
+        domain:
+          $ref: "#/components/schemas/Domain"
+        question:
+          type: string
+        marketProb:
+          type: number
+          description: Implied probability from the market (0-1)
+        modelProb:
+          type: number
+          description: Cassandra's estimated probability (0-1)
+        edge:
+          type: number
+          description: modelProb - marketProb (signed)
+        edgeScore:
+          type: number
+          description: Composite edge score 0-1 (absolute edge weighted by confidence and liquidity)
+        confidence:
+          type: number
+          description: Confidence in the model probability (0-1)
+        liquidity:
+          type: number
+          description: Mock liquidity (USD)
+        kellyFraction:
+          type: number
+          description: Suggested Kelly bankroll fraction (0-1, capped)
+        suggestedDirection:
+          $ref: "#/components/schemas/Direction"
+        url:
+          type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - marketKey
+        - source
+        - domain
+        - question
+        - marketProb
+        - modelProb
+        - edge
+        - edgeScore
+        - confidence
+        - liquidity
+        - kellyFraction
+        - suggestedDirection
+        - updatedAt
+
+    OpportunityDetail:
+      allOf:
+        - $ref: "#/components/schemas/Opportunity"
+        - type: object
+          properties:
+            rationale:
+              $ref: "#/components/schemas/Rationale"
+            recentSignals:
+              type: array
+              items:
+                $ref: "#/components/schemas/SignalEvent"
+            paperTrades:
+              type: array
+              items:
+                $ref: "#/components/schemas/PaperTrade"
+          required:
+            - rationale
+            - recentSignals
+            - paperTrades
+
+    Rationale:
+      type: object
+      description: Structured reasoning, separating facts from inference and speculation. Never exposes raw chain-of-thought.
+      properties:
+        observed:
+          type: array
+          items:
+            type: string
+        inferred:
+          type: array
+          items:
+            type: string
+        speculation:
+          type: array
+          items:
+            type: string
+        unknowns:
+          type: array
+          items:
+            type: string
+        riskFlags:
+          type: array
+          items:
+            type: string
+      required:
+        - observed
+        - inferred
+        - speculation
+        - unknowns
+        - riskFlags
+
+    SignalEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        opportunityId:
+          type: integer
+          nullable: true
+        domain:
+          $ref: "#/components/schemas/Domain"
+        source:
+          type: string
+        kind:
+          type: string
+          description: e.g. price_move, news, policy_release, options_skew
+        title:
+          type: string
+        body:
+          type: string
+        impact:
+          type: number
+          description: Estimated impact magnitude (0-1)
+        sentiment:
+          type: number
+          description: -1 (bearish) to 1 (bullish)
+        observedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - domain
+        - source
+        - kind
+        - title
+        - body
+        - impact
+        - sentiment
+        - observedAt
+
+    PaperTrade:
+      type: object
+      properties:
+        id:
+          type: integer
+        opportunityId:
+          type: integer
+        marketKey:
+          type: string
+        question:
+          type: string
+        direction:
+          $ref: "#/components/schemas/Direction"
+        sizeUsd:
+          type: number
+        entryProb:
+          type: number
+        exitProb:
+          type: number
+          nullable: true
+        status:
+          type: string
+          enum: [open, closed]
+        pnlUsd:
+          type: number
+          nullable: true
+        rationale:
+          type: string
+          nullable: true
+        openedAt:
+          type: string
+          format: date-time
+        closedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+        - id
+        - opportunityId
+        - marketKey
+        - question
+        - direction
+        - sizeUsd
+        - entryProb
+        - status
+        - openedAt
+
+    CreatePaperTradeBody:
+      type: object
+      properties:
+        opportunityId:
+          type: integer
+        direction:
+          $ref: "#/components/schemas/Direction"
+        sizeUsd:
+          type: number
+          minimum: 1
+        rationale:
+          type: string
+      required:
+        - opportunityId
+        - direction
+        - sizeUsd
+
+    ClosePaperTradeBody:
+      type: object
+      properties:
+        note:
+          type: string
+
+    JournalEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        domain:
+          $ref: "#/components/schemas/Domain"
+        question:
+          type: string
+        forecastProb:
+          type: number
+        horizonDays:
+          type: integer
+          nullable: true
+        observed:
+          type: array
+          items:
+            type: string
+        inferred:
+          type: array
+          items:
+            type: string
+        speculation:
+          type: array
+          items:
+            type: string
+        unknowns:
+          type: array
+          items:
+            type: string
+        outcome:
+          type: string
+          nullable: true
+          enum: [pending, yes, no, na]
+        outcomeProb:
+          type: number
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - domain
+        - question
+        - forecastProb
+        - observed
+        - inferred
+        - speculation
+        - unknowns
+        - createdAt
+
+    CreateJournalEntryBody:
+      type: object
+      properties:
+        title:
+          type: string
+        domain:
+          $ref: "#/components/schemas/Domain"
+        question:
+          type: string
+        forecastProb:
+          type: number
+          minimum: 0
+          maximum: 1
+        horizonDays:
+          type: integer
+        observed:
+          type: array
+          items:
+            type: string
+        inferred:
+          type: array
+          items:
+            type: string
+        speculation:
+          type: array
+          items:
+            type: string
+        unknowns:
+          type: array
+          items:
+            type: string
+      required:
+        - title
+        - domain
+        - question
+        - forecastProb
+
+    OpenClawJob:
+      type: object
+      properties:
+        id:
+          type: integer
+        kind:
+          type: string
+          description: e.g. ingest_manifold, ingest_polymarket, score_universe, refresh_signals
+        status:
+          type: string
+          enum: [pending, running, ok, error]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        durationMs:
+          type: integer
+          nullable: true
+        message:
+          type: string
+          nullable: true
+      required:
+        - id
+        - kind
+        - status
+        - startedAt
+
+    OpenClawStatus:
+      type: object
+      properties:
+        running:
+          type: boolean
+        nextRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastCycleAt:
+          type: string
+          format: date-time
+          nullable: true
+        cycleIntervalSec:
+          type: integer
+        connectors:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              status:
+                type: string
+                enum: [ok, degraded, error, idle]
+              lastSyncAt:
+                type: string
+                format: date-time
+                nullable: true
+              note:
+                type: string
+                nullable: true
+            required: [name, status]
+        recentJobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenClawJob"
+      required:
+        - running
+        - cycleIntervalSec
+        - connectors
+        - recentJobs
+
+    RiskConfig:
+      type: object
+      properties:
+        killSwitchEngaged:
+          type: boolean
+        liveExecutionEnabled:
+          type: boolean
+          description: Always false in this build; included for transparency
+        maxKellyFraction:
+          type: number
+          description: Hard cap on the Kelly fraction (e.g. 0.25 = quarter-Kelly)
+        maxPositionUsd:
+          type: number
+        bankrollUsd:
+          type: number
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - killSwitchEngaged
+        - liveExecutionEnabled
+        - maxKellyFraction
+        - maxPositionUsd
+        - bankrollUsd
+        - updatedAt
+
+    UpdateRiskConfigBody:
+      type: object
+      properties:
+        killSwitchEngaged:
+          type: boolean
+        maxKellyFraction:
+          type: number
+          minimum: 0
+          maximum: 1
+        maxPositionUsd:
+          type: number
+          minimum: 0
+        bankrollUsd:
+          type: number
+          minimum: 0
+
+    AnthropicConversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - createdAt
+    AnthropicMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - conversationId
+        - role
+        - content
+        - createdAt
+    CreateAnthropicConversationBody:
+      type: object
+      properties:
+        title:
+          type: string
+      required:
+        - title
+    SendAnthropicMessageBody:
+      type: object
+      properties:
+        content:
+          type: string
+      required:
+        - content
+    AnthropicConversationWithMessages:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnthropicMessage"
+      required:
+        - id
+        - title
+        - createdAt
+        - messages
+    AnthropicError:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
