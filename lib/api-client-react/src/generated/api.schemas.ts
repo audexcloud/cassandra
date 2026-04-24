@@ -34,6 +34,62 @@ export const Direction = {
   no: "no",
 } as const;
 
+export interface DashboardTopOpportunity {
+  id: number;
+  marketKey: string;
+  question: string;
+  domain: Domain;
+  source: string;
+  edge: number;
+  edgeScore: number;
+  modelProb: number;
+  marketProb: number;
+}
+
+export type DashboardActiveTradeDirection =
+  (typeof DashboardActiveTradeDirection)[keyof typeof DashboardActiveTradeDirection];
+
+export const DashboardActiveTradeDirection = {
+  yes: "yes",
+  no: "no",
+} as const;
+
+export interface DashboardActiveTrade {
+  id: number;
+  opportunityId: number;
+  marketKey: string;
+  question?: string;
+  direction: DashboardActiveTradeDirection;
+  sizeUsd: number;
+  entryProb: number;
+  unrealizedPnl: number;
+  openedAt: string;
+}
+
+export type DashboardAlertSeverity =
+  (typeof DashboardAlertSeverity)[keyof typeof DashboardAlertSeverity];
+
+export const DashboardAlertSeverity = {
+  info: "info",
+  warning: "warning",
+  critical: "critical",
+} as const;
+
+export interface DashboardAlert {
+  severity: DashboardAlertSeverity;
+  /** Stable identifier (e.g. kill_switch_engaged, connector_error, anomaly_detected) */
+  kind: string;
+  message: string;
+}
+
+export interface DashboardAgentStatus {
+  openclawRunning: boolean;
+  cycleIntervalSec: number;
+  lastCycleAt?: string | null;
+  lastDailyBriefAt?: string | null;
+  scoringModelVersion?: string | null;
+}
+
 export type DashboardSummaryOpportunitiesByDomainItem = {
   domain: Domain;
   count: number;
@@ -54,6 +110,10 @@ export interface DashboardSummary {
   /** Always false in this build (paper-only) */
   liveExecutionEnabled: boolean;
   lastCycleAt?: string | null;
+  topOpportunities: DashboardTopOpportunity[];
+  activeTrades: DashboardActiveTrade[];
+  alerts: DashboardAlert[];
+  agentStatus: DashboardAgentStatus;
 }
 
 export interface Opportunity {
@@ -238,6 +298,16 @@ export type OpenClawStatusConnectorsItem = {
   note?: string | null;
 };
 
+/**
+ * Long-term memory inventory.
+ */
+export type OpenClawStatusMemoryStats = {
+  observations: number;
+  narratives: number;
+  parallels: number;
+  anomalies: number;
+};
+
 export interface OpenClawStatus {
   running: boolean;
   nextRunAt?: string | null;
@@ -245,6 +315,11 @@ export interface OpenClawStatus {
   cycleIntervalSec: number;
   connectors: OpenClawStatusConnectorsItem[];
   recentJobs: OpenClawJob[];
+  /** Named job kinds the orchestrator runs each cycle. */
+  scheduledJobs?: string[];
+  /** Long-term memory inventory. */
+  memoryStats?: OpenClawStatusMemoryStats;
+  lastDailyBriefAt?: string | null;
 }
 
 export interface RiskConfig {

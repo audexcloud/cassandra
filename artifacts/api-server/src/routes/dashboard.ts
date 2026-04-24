@@ -6,8 +6,10 @@ import {
   signalEvents,
   paperTrades,
   riskConfig,
+  connectorStatus,
+  scoringModelVersions,
 } from "@workspace/db";
-import { sql, gte, eq, inArray } from "drizzle-orm";
+import { sql, gte, eq, inArray, desc } from "drizzle-orm";
 import { openClawSnapshot } from "../lib/cassandra/openclaw";
 import { priceForSide } from "../lib/cassandra/scoring";
 
@@ -100,6 +102,112 @@ router.get("/dashboard/summary", async (_req, res) => {
 
   const snapshot = openClawSnapshot();
 
+  // Top opportunities + active trades + alerts + agent status: the operator
+  // hits ONE endpoint and sees everything they need to start the morning.
+  const [topOppRows, activeTradeRows, connectorStatusRows, modelVersionRow] =
+    await Promise.all([
+      db
+        .select({
+          id: opportunities.id,
+          marketKey: opportunities.marketKey,
+          question: opportunities.question,
+          domain: opportunities.domain,
+          source: opportunities.source,
+          edge: opportunities.edge,
+          edgeScore: opportunities.edgeScore,
+          modelProb: opportunities.modelProb,
+          marketProb: opportunities.marketProb,
+        })
+        .from(opportunities)
+        .orderBy(desc(opportunities.edgeScore))
+        .limit(5),
+      db
+        .select({
+          id: paperTrades.id,
+          opportunityId: paperTrades.opportunityId,
+          marketKey: paperTrades.marketKey,
+          question: paperTrades.question,
+          direction: paperTrades.direction,
+          sizeUsd: paperTrades.sizeUsd,
+          entryProb: paperTrades.entryProb,
+          openedAt: paperTrades.openedAt,
+        })
+        .from(paperTrades)
+        .where(eq(paperTrades.status, "open"))
+        .orderBy(desc(paperTrades.openedAt))
+        .limit(10),
+      db.select().from(connectorStatus),
+      db
+        .select()
+        .from(scoringModelVersions)
+        .orderBy(desc(scoringModelVersions.createdAt))
+        .limit(1),
+    ]);
+
+  // Compute per-trade unrealized P&L for the activeTrades payload.
+  const probMap = new Map<number, number>();
+  if (activeTradeRows.length > 0) {
+    const ids = activeTradeRows.map((t) => t.opportunityId);
+    const probs = await db
+      .select({ id: opportunities.id, marketProb: opportunities.marketProb })
+      .from(opportunities)
+      .where(inArray(opportunities.id, ids));
+    for (const p of probs) probMap.set(p.id, p.marketProb);
+  }
+
+  const activeTrades = activeTradeRows.map((t) => {
+    const dir = t.direction as "yes" | "no";
+    const market = probMap.get(t.opportunityId);
+    const exit = market === undefined ? t.entryProb : priceForSide(dir, market);
+    const entry = Math.max(0.001, t.entryProb);
+    const shares = t.sizeUsd / entry;
+    const upnl = shares * (exit - entry);
+    return {
+      id: t.id,
+      opportunityId: t.opportunityId,
+      marketKey: t.marketKey,
+      question: t.question,
+      direction: dir,
+      sizeUsd: t.sizeUsd,
+      entryProb: t.entryProb,
+      unrealizedPnl: Number(upnl.toFixed(2)),
+      openedAt: t.openedAt.toISOString(),
+    };
+  });
+
+  // Alerts: surface anything that should change operator behaviour today.
+  const alerts: Array<{ severity: "info" | "warning" | "critical"; kind: string; message: string }> = [];
+  if (cfg?.killSwitchEngaged) {
+    alerts.push({
+      severity: "critical",
+      kind: "kill_switch_engaged",
+      message: "Kill switch is engaged — all new trades are blocked.",
+    });
+  }
+  for (const cs of connectorStatusRows) {
+    if (cs.status === "error") {
+      alerts.push({
+        severity: "warning",
+        kind: "connector_error",
+        message: `Connector "${cs.name}" is in error state: ${cs.lastError ?? "unknown"}.`,
+      });
+    } else if (cs.status === "degraded") {
+      alerts.push({
+        severity: "info",
+        kind: "connector_degraded",
+        message: `Connector "${cs.name}" is degraded.`,
+      });
+    }
+  }
+  // Highlight any unusually large edge as an "opportunity_spotlight" alert.
+  if ((topOppRows[0]?.edgeScore ?? 0) >= 0.7) {
+    alerts.push({
+      severity: "info",
+      kind: "opportunity_spotlight",
+      message: `Top edge score is ${(topOppRows[0].edgeScore * 100).toFixed(0)}% — review "${topOppRows[0].question}".`,
+    });
+  }
+
   const data = GetDashboardSummaryResponse.parse({
     opportunitiesTotal: totalRow[0]?.n ?? 0,
     opportunitiesByDomain: byDomainRows.map((r) => ({
@@ -116,6 +224,18 @@ router.get("/dashboard/summary", async (_req, res) => {
     // Hard-pinned to false in this build regardless of any DB value.
     liveExecutionEnabled: false,
     lastCycleAt: snapshot.lastCycleAt ? snapshot.lastCycleAt.toISOString() : null,
+    topOpportunities: topOppRows,
+    activeTrades,
+    alerts,
+    agentStatus: {
+      openclawRunning: snapshot.running,
+      cycleIntervalSec: snapshot.cycleIntervalSec,
+      lastCycleAt: snapshot.lastCycleAt ? snapshot.lastCycleAt.toISOString() : null,
+      lastDailyBriefAt: snapshot.lastDailyBriefAt
+        ? snapshot.lastDailyBriefAt.toISOString()
+        : null,
+      scoringModelVersion: modelVersionRow[0]?.version ?? null,
+    },
   });
   res.json(data);
 });

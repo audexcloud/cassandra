@@ -575,6 +575,69 @@ components:
       type: string
       enum: [yes, no]
 
+    DashboardTopOpportunity:
+      type: object
+      required: [id, marketKey, question, domain, source, edge, edgeScore, modelProb, marketProb]
+      properties:
+        id: { type: integer }
+        marketKey: { type: string }
+        question: { type: string }
+        domain:
+          $ref: "#/components/schemas/Domain"
+        source: { type: string }
+        edge: { type: number }
+        edgeScore: { type: number }
+        modelProb: { type: number }
+        marketProb: { type: number }
+
+    DashboardActiveTrade:
+      type: object
+      required: [id, opportunityId, marketKey, direction, sizeUsd, entryProb, unrealizedPnl, openedAt]
+      properties:
+        id: { type: integer }
+        opportunityId: { type: integer }
+        marketKey: { type: string }
+        question: { type: string }
+        direction:
+          type: string
+          enum: [yes, no]
+        sizeUsd: { type: number }
+        entryProb: { type: number }
+        unrealizedPnl: { type: number }
+        openedAt:
+          type: string
+          format: date-time
+
+    DashboardAlert:
+      type: object
+      required: [severity, kind, message]
+      properties:
+        severity:
+          type: string
+          enum: [info, warning, critical]
+        kind:
+          type: string
+          description: Stable identifier (e.g. kill_switch_engaged, connector_error, anomaly_detected)
+        message: { type: string }
+
+    DashboardAgentStatus:
+      type: object
+      required: [openclawRunning, cycleIntervalSec]
+      properties:
+        openclawRunning: { type: boolean }
+        cycleIntervalSec: { type: integer }
+        lastCycleAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastDailyBriefAt:
+          type: string
+          format: date-time
+          nullable: true
+        scoringModelVersion:
+          type: string
+          nullable: true
+
     DashboardSummary:
       type: object
       properties:
@@ -613,6 +676,20 @@ components:
           type: string
           format: date-time
           nullable: true
+        topOpportunities:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardTopOpportunity"
+        activeTrades:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardActiveTrade"
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/DashboardAlert"
+        agentStatus:
+          $ref: "#/components/schemas/DashboardAgentStatus"
       required:
         - opportunitiesTotal
         - opportunitiesByDomain
@@ -624,6 +701,10 @@ components:
         - topEdge
         - killSwitchEngaged
         - liveExecutionEnabled
+        - topOpportunities
+        - activeTrades
+        - alerts
+        - agentStatus
 
     Opportunity:
       type: object
@@ -1007,6 +1088,24 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/OpenClawJob"
+        scheduledJobs:
+          type: array
+          description: Named job kinds the orchestrator runs each cycle.
+          items:
+            type: string
+        memoryStats:
+          type: object
+          description: Long-term memory inventory.
+          required: [observations, narratives, parallels, anomalies]
+          properties:
+            observations: { type: integer }
+            narratives: { type: integer }
+            parallels: { type: integer }
+            anomalies: { type: integer }
+        lastDailyBriefAt:
+          type: string
+          format: date-time
+          nullable: true
       required:
         - running
         - cycleIntervalSec

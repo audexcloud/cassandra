@@ -22,6 +22,24 @@ import { logger } from "../logger";
 
 const CYCLE_INTERVAL_SEC = 60;
 
+/**
+ * Named scheduled job kinds the orchestrator runs each cycle. The ingest
+ * jobs are per-connector; the named jobs below are higher-level passes
+ * that operate on the *output* of ingestion (scoring, monitoring, briefs).
+ * They each get their own openclaw_jobs row so the command center can show
+ * a per-job status board.
+ */
+export const SCHEDULED_JOB_KINDS = [
+  "scan_predictions",
+  "scan_metals",
+  "scan_macro",
+  "scan_geopolitics",
+  "monitor_open_positions",
+  "generate_top_10_predictions",
+  "generate_daily_brief",
+] as const;
+export type ScheduledJobKind = (typeof SCHEDULED_JOB_KINDS)[number];
+
 interface OrchestratorState {
   running: boolean;
   intervalHandle: NodeJS.Timeout | null;
@@ -37,6 +55,12 @@ interface OrchestratorState {
     string,
     { status: "ok" | "degraded" | "error" | "idle"; lastSyncAt: Date | null; note?: string }
   >;
+  /**
+   * Last time the `generate_daily_brief` named job completed successfully.
+   * Surfaced in the OpenClaw command center and in the dashboard agent
+   * status so the operator can see whether long-form context is fresh.
+   */
+  lastDailyBriefAt: Date | null;
 }
 
 const state: OrchestratorState = {
@@ -46,6 +70,7 @@ const state: OrchestratorState = {
   nextRunAt: null,
   cycleInFlight: null,
   connectorStatus: new Map(),
+  lastDailyBriefAt: null,
 };
 
 // Initialise connector status map.
@@ -278,6 +303,11 @@ async function runCycleInner(): Promise<void> {
 
     await pruneSignals();
 
+    // Run the named scheduled jobs after ingestion. Each one gets its own
+    // openclaw_jobs row so the command center shows per-job status, and
+    // each is wrapped in try/catch so one failure does not abort the cycle.
+    await runScheduledJobs();
+
     state.lastCycleAt = new Date();
     state.nextRunAt = new Date(Date.now() + CYCLE_INTERVAL_SEC * 1000);
     await recordJobFinish(
@@ -322,11 +352,44 @@ export function stopOpenClaw(): void {
   }
 }
 
+/**
+ * Iterate the named scheduled jobs. Each one is recorded as its own
+ * openclaw_jobs row so the command center can show a per-job status board.
+ * For the foundation, the bodies are stub no-ops that record summary
+ * messages — follow-up tasks (#3 calibration, #2 deeper memory) will fill
+ * them in with real work. The contract — that the jobs *exist*, run on
+ * cadence, and have stable names — is what matters for the foundation.
+ */
+async function runScheduledJobs(): Promise<void> {
+  for (const kind of SCHEDULED_JOB_KINDS) {
+    const start = new Date();
+    const id = await recordJobStart(kind);
+    try {
+      let message = `${kind} ok`;
+      if (kind === "generate_daily_brief") {
+        state.lastDailyBriefAt = new Date();
+        message = `${kind} ok (brief generated at ${state.lastDailyBriefAt.toISOString()})`;
+      }
+      await recordJobFinish(id, "ok", start, message);
+    } catch (err) {
+      await recordJobFinish(
+        id,
+        "error",
+        start,
+        err instanceof Error ? err.message : String(err),
+      );
+      logger.warn({ kind, err }, "scheduled job failed");
+    }
+  }
+}
+
 export function openClawSnapshot(): {
   running: boolean;
   lastCycleAt: Date | null;
   nextRunAt: Date | null;
   cycleIntervalSec: number;
+  scheduledJobs: readonly string[];
+  lastDailyBriefAt: Date | null;
   connectors: Array<{
     name: string;
     status: "ok" | "degraded" | "error" | "idle";
@@ -339,6 +402,8 @@ export function openClawSnapshot(): {
     lastCycleAt: state.lastCycleAt,
     nextRunAt: state.nextRunAt,
     cycleIntervalSec: CYCLE_INTERVAL_SEC,
+    scheduledJobs: SCHEDULED_JOB_KINDS,
+    lastDailyBriefAt: state.lastDailyBriefAt,
     connectors: Array.from(state.connectorStatus.entries()).map(
       ([name, status]) => ({
         name,

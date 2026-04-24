@@ -5,7 +5,11 @@
  * Cassandra — personal predictive intelligence terminal API
  * OpenAPI spec version: 0.1.0
  */
+import type { DashboardActiveTrade } from "./dashboardActiveTrade";
+import type { DashboardAgentStatus } from "./dashboardAgentStatus";
+import type { DashboardAlert } from "./dashboardAlert";
 import type { DashboardSummaryOpportunitiesByDomainItem } from "./dashboardSummaryOpportunitiesByDomainItem";
+import type { DashboardTopOpportunity } from "./dashboardTopOpportunity";
 
 export interface DashboardSummary {
   opportunitiesTotal: number;
@@ -22,4 +26,8 @@ export interface DashboardSummary {
   /** Always false in this build (paper-only) */
   liveExecutionEnabled: boolean;
   lastCycleAt?: Date | null;
+  topOpportunities: DashboardTopOpportunity[];
+  activeTrades: DashboardActiveTrade[];
+  alerts: DashboardAlert[];
+  agentStatus: DashboardAgentStatus;
 }

@@ -13,10 +13,13 @@ import {
   paperTrades,
   riskConfig,
   auditLog,
+  paperTradeOutcomes,
+  signalEvents,
 } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { paperPnl, priceForSide, evaluateRiskGate } from "../lib/cassandra/scoring";
 import { serializePaperTrade } from "./opportunities";
+import { ingestSignals, updatePredictionJournal } from "../lib/cassandra/pipeline";
 
 const router: IRouter = Router();
 
@@ -223,6 +226,55 @@ router.post("/paper-trades/:id/close", async (req, res) => {
         closeFraction: fraction,
         remainderTradeId: remainder?.id ?? null,
       },
+    });
+
+    // Persist a prediction-journal outcome row tied to this closure. The
+    // journal is the calibration substrate: every closed trade gets a
+    // structured "what was right / what was wrong" that follow-up
+    // calibration work can mine without re-deriving from raw audit logs.
+    const recentSignals = opp
+      ? await tx
+          .select({
+            source: signalEvents.source,
+            kind: signalEvents.kind,
+            domain: signalEvents.domain,
+            title: signalEvents.title,
+            body: signalEvents.body,
+            impact: signalEvents.impact,
+            sentiment: signalEvents.sentiment,
+          })
+          .from(signalEvents)
+          .where(eq(signalEvents.opportunityId, opp.id))
+          .orderBy(desc(signalEvents.observedAt))
+          .limit(20)
+      : [];
+    const normalized = ingestSignals(
+      recentSignals.map((s) => ({ ...s, weight: Math.max(0.1, s.impact) })),
+    );
+    const rationale = (opp?.rationale ?? {
+      observed: [],
+      inferred: [],
+      speculation: [],
+      unknowns: [],
+      riskFlags: [],
+    }) as {
+      observed: string[];
+      inferred: string[];
+      speculation: string[];
+      unknowns: string[];
+      riskFlags: string[];
+    };
+    const journal = updatePredictionJournal({
+      paperTradeId: updated.id,
+      realizedPnlUsd: Number(pnl.toFixed(2)),
+      rationale,
+      signals: normalized,
+    });
+    await tx.insert(paperTradeOutcomes).values({
+      paperTradeId: journal.paperTradeId,
+      realizedPnlUsd: journal.realizedPnlUsd,
+      whatWasRight: journal.whatWasRight,
+      whatWasWrong: journal.whatWasWrong,
     });
 
     return { kind: "ok" as const, updated };

@@ -6,8 +6,14 @@ import {
   RunOpenClawCycleResponse,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
-import { openclawJobs } from "@workspace/db";
-import { desc } from "drizzle-orm";
+import {
+  openclawJobs,
+  observations,
+  narratives,
+  historicalParallels,
+  anomalies,
+} from "@workspace/db";
+import { desc, sql } from "drizzle-orm";
 import {
   openClawSnapshot,
   runCycle,
@@ -17,11 +23,20 @@ const router: IRouter = Router();
 
 router.get("/openclaw/status", async (_req, res) => {
   const snapshot = openClawSnapshot();
-  const recent = await db
-    .select()
-    .from(openclawJobs)
-    .orderBy(desc(openclawJobs.startedAt))
-    .limit(10);
+  const [recent, memCounts] = await Promise.all([
+    db
+      .select()
+      .from(openclawJobs)
+      .orderBy(desc(openclawJobs.startedAt))
+      .limit(10),
+    Promise.all([
+      db.select({ n: sql<number>`count(*)::int` }).from(observations),
+      db.select({ n: sql<number>`count(*)::int` }).from(narratives),
+      db.select({ n: sql<number>`count(*)::int` }).from(historicalParallels),
+      db.select({ n: sql<number>`count(*)::int` }).from(anomalies),
+    ]),
+  ]);
+  const [obsRow, narRow, parRow, anoRow] = memCounts;
   res.json(
     GetOpenClawStatusResponse.parse({
       running: snapshot.running,
@@ -35,6 +50,16 @@ router.get("/openclaw/status", async (_req, res) => {
         note: c.note ?? null,
       })),
       recentJobs: recent.map(serializeJob),
+      scheduledJobs: [...snapshot.scheduledJobs],
+      memoryStats: {
+        observations: obsRow[0]?.n ?? 0,
+        narratives: narRow[0]?.n ?? 0,
+        parallels: parRow[0]?.n ?? 0,
+        anomalies: anoRow[0]?.n ?? 0,
+      },
+      lastDailyBriefAt: snapshot.lastDailyBriefAt
+        ? snapshot.lastDailyBriefAt.toISOString()
+        : null,
     }),
   );
 });
@@ -71,6 +96,11 @@ router.post("/openclaw/run", async (_req, res) => {
         note: c.note ?? null,
       })),
       recentJobs: [],
+      scheduledJobs: [...snapshot.scheduledJobs],
+      memoryStats: { observations: 0, narratives: 0, parallels: 0, anomalies: 0 },
+      lastDailyBriefAt: snapshot.lastDailyBriefAt
+        ? snapshot.lastDailyBriefAt.toISOString()
+        : null,
     }),
   );
 });

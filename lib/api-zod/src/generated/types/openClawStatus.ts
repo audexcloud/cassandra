@@ -7,6 +7,7 @@
  */
 import type { OpenClawJob } from "./openClawJob";
 import type { OpenClawStatusConnectorsItem } from "./openClawStatusConnectorsItem";
+import type { OpenClawStatusMemoryStats } from "./openClawStatusMemoryStats";
 
 export interface OpenClawStatus {
   running: boolean;
@@ -15,4 +16,9 @@ export interface OpenClawStatus {
   cycleIntervalSec: number;
   connectors: OpenClawStatusConnectorsItem[];
   recentJobs: OpenClawJob[];
+  /** Named job kinds the orchestrator runs each cycle. */
+  scheduledJobs?: string[];
+  /** Long-term memory inventory. */
+  memoryStats?: OpenClawStatusMemoryStats;
+  lastDailyBriefAt?: Date | null;
 }

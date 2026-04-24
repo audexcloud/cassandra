@@ -47,6 +47,59 @@ export const GetDashboardSummaryResponse = zod.object({
     .boolean()
     .describe("Always false in this build (paper-only)"),
   lastCycleAt: zod.coerce.date().nullish(),
+  topOpportunities: zod.array(
+    zod.object({
+      id: zod.number(),
+      marketKey: zod.string(),
+      question: zod.string(),
+      domain: zod
+        .enum([
+          "prediction_market",
+          "geopolitics",
+          "policy",
+          "commodities",
+          "metals",
+          "macro",
+        ])
+        .describe("High-level intelligence domain"),
+      source: zod.string(),
+      edge: zod.number(),
+      edgeScore: zod.number(),
+      modelProb: zod.number(),
+      marketProb: zod.number(),
+    }),
+  ),
+  activeTrades: zod.array(
+    zod.object({
+      id: zod.number(),
+      opportunityId: zod.number(),
+      marketKey: zod.string(),
+      question: zod.string().optional(),
+      direction: zod.enum(["yes", "no"]),
+      sizeUsd: zod.number(),
+      entryProb: zod.number(),
+      unrealizedPnl: zod.number(),
+      openedAt: zod.coerce.date(),
+    }),
+  ),
+  alerts: zod.array(
+    zod.object({
+      severity: zod.enum(["info", "warning", "critical"]),
+      kind: zod
+        .string()
+        .describe(
+          "Stable identifier (e.g. kill_switch_engaged, connector_error, anomaly_detected)",
+        ),
+      message: zod.string(),
+    }),
+  ),
+  agentStatus: zod.object({
+    openclawRunning: zod.boolean(),
+    cycleIntervalSec: zod.number(),
+    lastCycleAt: zod.coerce.date().nullish(),
+    lastDailyBriefAt: zod.coerce.date().nullish(),
+    scoringModelVersion: zod.string().nullish(),
+  }),
 });
 
 /**
@@ -565,6 +618,20 @@ export const GetOpenClawStatusResponse = zod.object({
       message: zod.string().nullish(),
     }),
   ),
+  scheduledJobs: zod
+    .array(zod.string())
+    .optional()
+    .describe("Named job kinds the orchestrator runs each cycle."),
+  memoryStats: zod
+    .object({
+      observations: zod.number(),
+      narratives: zod.number(),
+      parallels: zod.number(),
+      anomalies: zod.number(),
+    })
+    .optional()
+    .describe("Long-term memory inventory."),
+  lastDailyBriefAt: zod.coerce.date().nullish(),
 });
 
 /**
@@ -627,6 +694,20 @@ export const RunOpenClawCycleResponse = zod.object({
       message: zod.string().nullish(),
     }),
   ),
+  scheduledJobs: zod
+    .array(zod.string())
+    .optional()
+    .describe("Named job kinds the orchestrator runs each cycle."),
+  memoryStats: zod
+    .object({
+      observations: zod.number(),
+      narratives: zod.number(),
+      parallels: zod.number(),
+      anomalies: zod.number(),
+    })
+    .optional()
+    .describe("Long-term memory inventory."),
+  lastDailyBriefAt: zod.coerce.date().nullish(),
 });
 
 /**
