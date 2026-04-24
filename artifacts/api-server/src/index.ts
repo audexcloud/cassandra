@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { startOpenClaw } from "./lib/cassandra/openclaw";
 import { ensureSeed } from "./lib/cassandra/seed";
+import { ensureWinnerWalletSeed } from "./lib/cassandra/winnerWallets";
 
 const rawPort = process.env["PORT"];
 
@@ -25,6 +26,7 @@ app.listen(port, (err) => {
 
   logger.info({ port }, "Server listening");
   ensureSeed()
+    .then(() => ensureWinnerWalletSeed())
     .then(() => startOpenClaw())
     .catch((seedErr) => {
       logger.error({ err: seedErr }, "Seed failed; OpenClaw not started");

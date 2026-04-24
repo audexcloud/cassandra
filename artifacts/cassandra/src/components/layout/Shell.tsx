@@ -14,6 +14,7 @@ import {
   ShieldOff,
   Shuffle,
   TrendingUp,
+  Trophy,
   AlertTriangle,
 } from "lucide-react";
 import {
@@ -62,6 +63,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     { href: "/paper", label: "Paper Trades", icon: LineChart },
     { href: "/journal", label: "Journal", icon: BookOpen },
     { href: "/backtest", label: "Backtest", icon: Gauge },
+    { href: "/winners", label: "Winner Accounts", icon: Trophy },
     { href: "/openclaw", label: "OpenClaw", icon: Radio },
     { href: "/agent", label: "Agent", icon: MessageSquare },
   ];

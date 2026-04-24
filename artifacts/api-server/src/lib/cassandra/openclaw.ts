@@ -23,6 +23,7 @@ import {
   backtestRanRecently,
   runStandardBacktests,
 } from "./backtest";
+import { refreshWinnerWallets } from "./winnerWallets";
 import { logger } from "../logger";
 
 const CYCLE_INTERVAL_SEC = 60;
@@ -45,6 +46,7 @@ export const SCHEDULED_JOB_KINDS = [
   "generate_top_10_predictions",
   "generate_daily_brief",
   "compute_calibration_backtest",
+  "refresh_winner_wallets",
 ] as const;
 export type ScheduledJobKind = (typeof SCHEDULED_JOB_KINDS)[number];
 
@@ -418,6 +420,11 @@ async function runScheduledJobs(): Promise<void> {
           const r = await runStandardBacktests();
           message = `${kind} ok (lookbacks=${r.ran.join(",")} scopes=${r.totalScopes})`;
         }
+      } else if (kind === "refresh_winner_wallets") {
+        // Real work: pull a fresh snapshot for every tracked Polymarket
+        // wallet, recompute rank, and emit any new mirror suggestions.
+        const r = await refreshWinnerWallets();
+        message = `wallets=${r.walletsRefreshed} snapshots=${r.snapshotsInserted} suggestions=${r.suggestionsCreated}`;
       }
       await recordJobFinish(id, "ok", start, message);
     } catch (err) {

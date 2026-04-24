@@ -1294,6 +1294,280 @@ export const RunBacktestResponse = zod.object({
 });
 
 /**
+ * @summary List tracked high-performing wallets, ranked by P&L.
+ */
+export const listWinnerAccountsQueryLimitDefault = 50;
+export const listWinnerAccountsQueryLimitMax = 200;
+
+export const ListWinnerAccountsQueryParams = zod.object({
+  source: zod.coerce.string().optional(),
+  limit: zod.coerce
+    .number()
+    .min(1)
+    .max(listWinnerAccountsQueryLimitMax)
+    .default(listWinnerAccountsQueryLimitDefault),
+});
+
+export const ListWinnerAccountsResponseItem = zod
+  .object({
+    id: zod.number(),
+    source: zod.string(),
+    address: zod.string(),
+    label: zod.string(),
+    notes: zod.string().nullish(),
+    rank: zod.number().nullish(),
+    hitRate: zod.number(),
+    avgEdge: zod.number(),
+    pnlUsd: zod.number(),
+    activePositions: zod.number(),
+    closedPositions: zod.number(),
+    tracked: zod.boolean(),
+    lastSyncedAt: zod.coerce.date().nullish(),
+    pnlSparkline: zod.array(
+      zod.object({
+        t: zod.coerce.date(),
+        pnlUsd: zod.number(),
+      }),
+    ),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .describe(
+    "High-performing tracked wallet, with the metrics shown on the list\nview. `pnlSparkline` is a small recent-history sample (typically the\nlast 24 snapshots) used to render the inline sparkline.\n",
+  );
+export const ListWinnerAccountsResponse = zod.array(
+  ListWinnerAccountsResponseItem,
+);
+
+/**
+ * @summary Detail view for a tracked wallet (snapshots, suggestions, recent positions)
+ */
+export const GetWinnerAccountParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetWinnerAccountResponse = zod
+  .object({
+    id: zod.number(),
+    source: zod.string(),
+    address: zod.string(),
+    label: zod.string(),
+    notes: zod.string().nullish(),
+    rank: zod.number().nullish(),
+    hitRate: zod.number(),
+    avgEdge: zod.number(),
+    pnlUsd: zod.number(),
+    activePositions: zod.number(),
+    closedPositions: zod.number(),
+    tracked: zod.boolean(),
+    lastSyncedAt: zod.coerce.date().nullish(),
+    pnlSparkline: zod.array(
+      zod.object({
+        t: zod.coerce.date(),
+        pnlUsd: zod.number(),
+      }),
+    ),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .describe(
+    "High-performing tracked wallet, with the metrics shown on the list\nview. `pnlSparkline` is a small recent-history sample (typically the\nlast 24 snapshots) used to render the inline sparkline.\n",
+  )
+  .and(
+    zod.object({
+      snapshots: zod.array(
+        zod.object({
+          capturedAt: zod.coerce.date(),
+          pnlUsd: zod.number(),
+          activePositions: zod.number(),
+          closedPositions: zod.number(),
+          hitRate: zod.number(),
+          avgEdge: zod.number(),
+        }),
+      ),
+      openPositions: zod.array(
+        zod
+          .object({
+            marketKey: zod.string(),
+            question: zod.string(),
+            direction: zod.enum(["yes", "no"]),
+            entryProb: zod.number(),
+            currentProb: zod.number().nullish(),
+            sizeUsd: zod.number(),
+            unrealizedPnl: zod.number().nullish(),
+            openedAt: zod.coerce.date(),
+            opportunityId: zod.number().nullish(),
+          })
+          .describe("A position the wallet currently holds."),
+      ),
+      recentClosedPositions: zod.array(
+        zod
+          .object({
+            marketKey: zod.string(),
+            question: zod.string(),
+            direction: zod.enum(["yes", "no"]),
+            entryProb: zod.number(),
+            exitProb: zod.number(),
+            sizeUsd: zod.number(),
+            pnlUsd: zod.number(),
+            closedAt: zod.coerce.date(),
+          })
+          .describe("A position the wallet has already closed."),
+      ),
+      suggestions: zod.array(
+        zod
+          .object({
+            id: zod.number(),
+            walletId: zod.number(),
+            opportunityId: zod.number().nullish(),
+            marketKey: zod.string(),
+            question: zod.string(),
+            direction: zod.enum(["yes", "no"]),
+            entryProb: zod.number(),
+            suggestedSizeUsd: zod.number(),
+            walletSizeUsd: zod.number(),
+            rationale: zod
+              .object({
+                observed: zod.array(zod.string()),
+                inferred: zod.array(zod.string()),
+                speculation: zod.array(zod.string()),
+                unknowns: zod.array(zod.string()),
+                riskFlags: zod.array(zod.string()),
+              })
+              .describe(
+                "Structured reasoning, separating facts from inference and speculation. Never exposes raw chain-of-thought.",
+              ),
+            status: zod.enum(["pending", "mirrored", "dismissed"]),
+            paperTradeId: zod.number().nullish(),
+            createdAt: zod.coerce.date(),
+            updatedAt: zod.coerce.date(),
+          })
+          .describe(
+            'A \"mirror this trade\" suggestion produced by the wallet refresh job.\nThe Reasoning Summary is structured the same way as the rest of the\napp: observed \/ inferred \/ speculation \/ unknowns \/ risk flags.\n',
+          ),
+      ),
+    }),
+  );
+
+/**
+ * @summary Manually trigger a wallet-snapshot refresh cycle.
+ */
+export const RefreshWinnerAccountsResponse = zod.object({
+  walletsRefreshed: zod.number(),
+  snapshotsInserted: zod.number(),
+  suggestionsCreated: zod.number(),
+  ranAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Open a paper trade from a mirror suggestion.
+ */
+export const MirrorWinnerSuggestionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const mirrorWinnerSuggestionBodyNoteMax = 500;
+
+export const MirrorWinnerSuggestionBody = zod
+  .object({
+    sizeUsd: zod
+      .number()
+      .min(1)
+      .optional()
+      .describe(
+        "Override the orchestrator's suggested size. Defaults to the\nsuggestion's `suggestedSizeUsd`. Subject to the same risk caps\nas a normal paper trade (max position USD, watch-only mode,\nkill switch).\n",
+      ),
+    note: zod.string().max(mirrorWinnerSuggestionBodyNoteMax).optional(),
+  })
+  .describe("Optional override for the mirror action.");
+
+export const MirrorWinnerSuggestionResponse = zod.object({
+  suggestion: zod
+    .object({
+      id: zod.number(),
+      walletId: zod.number(),
+      opportunityId: zod.number().nullish(),
+      marketKey: zod.string(),
+      question: zod.string(),
+      direction: zod.enum(["yes", "no"]),
+      entryProb: zod.number(),
+      suggestedSizeUsd: zod.number(),
+      walletSizeUsd: zod.number(),
+      rationale: zod
+        .object({
+          observed: zod.array(zod.string()),
+          inferred: zod.array(zod.string()),
+          speculation: zod.array(zod.string()),
+          unknowns: zod.array(zod.string()),
+          riskFlags: zod.array(zod.string()),
+        })
+        .describe(
+          "Structured reasoning, separating facts from inference and speculation. Never exposes raw chain-of-thought.",
+        ),
+      status: zod.enum(["pending", "mirrored", "dismissed"]),
+      paperTradeId: zod.number().nullish(),
+      createdAt: zod.coerce.date(),
+      updatedAt: zod.coerce.date(),
+    })
+    .describe(
+      'A \"mirror this trade\" suggestion produced by the wallet refresh job.\nThe Reasoning Summary is structured the same way as the rest of the\napp: observed \/ inferred \/ speculation \/ unknowns \/ risk flags.\n',
+    ),
+  paperTrade: zod.object({
+    id: zod.number(),
+    opportunityId: zod.number(),
+    marketKey: zod.string(),
+    question: zod.string(),
+    direction: zod.enum(["yes", "no"]),
+    sizeUsd: zod.number(),
+    entryProb: zod.number(),
+    exitProb: zod.number().nullish(),
+    status: zod.enum(["open", "closed"]),
+    pnlUsd: zod.number().nullish(),
+    rationale: zod.string().nullish(),
+    openedAt: zod.coerce.date(),
+    closedAt: zod.coerce.date().nullish(),
+  }),
+});
+
+/**
+ * @summary Dismiss a mirror suggestion without mirroring it.
+ */
+export const DismissWinnerSuggestionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const DismissWinnerSuggestionResponse = zod
+  .object({
+    id: zod.number(),
+    walletId: zod.number(),
+    opportunityId: zod.number().nullish(),
+    marketKey: zod.string(),
+    question: zod.string(),
+    direction: zod.enum(["yes", "no"]),
+    entryProb: zod.number(),
+    suggestedSizeUsd: zod.number(),
+    walletSizeUsd: zod.number(),
+    rationale: zod
+      .object({
+        observed: zod.array(zod.string()),
+        inferred: zod.array(zod.string()),
+        speculation: zod.array(zod.string()),
+        unknowns: zod.array(zod.string()),
+        riskFlags: zod.array(zod.string()),
+      })
+      .describe(
+        "Structured reasoning, separating facts from inference and speculation. Never exposes raw chain-of-thought.",
+      ),
+    status: zod.enum(["pending", "mirrored", "dismissed"]),
+    paperTradeId: zod.number().nullish(),
+    createdAt: zod.coerce.date(),
+    updatedAt: zod.coerce.date(),
+  })
+  .describe(
+    'A \"mirror this trade\" suggestion produced by the wallet refresh job.\nThe Reasoning Summary is structured the same way as the rest of the\napp: observed \/ inferred \/ speculation \/ unknowns \/ risk flags.\n',
+  );
+
+/**
  * @summary List all conversations
  */
 export const ListAnthropicConversationsResponseItem = zod.object({

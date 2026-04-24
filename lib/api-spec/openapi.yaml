@@ -26,6 +26,8 @@ tags:
     description: Risk configuration and kill switch
   - name: anthropic
     description: Anthropic AI chat operations
+  - name: winnerAccounts
+    description: Tracked high-performing prediction-market wallets and mirror-trade suggestions
   - name: backtest
     description: Backtesting + calibration scoring of historical predictions
 paths:
@@ -547,6 +549,131 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/BacktestHeadlineSummary"
+
+  /winner-accounts:
+    get:
+      operationId: listWinnerAccounts
+      tags: [winnerAccounts]
+      summary: List tracked high-performing wallets, ranked by P&L.
+      parameters:
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Tracked wallets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/WinnerAccount"
+  /winner-accounts/{id}:
+    get:
+      operationId: getWinnerAccount
+      tags: [winnerAccounts]
+      summary: Detail view for a tracked wallet (snapshots, suggestions, recent positions)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Wallet detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WinnerAccountDetail"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /winner-accounts/refresh:
+    post:
+      operationId: refreshWinnerAccounts
+      tags: [winnerAccounts]
+      summary: Manually trigger a wallet-snapshot refresh cycle.
+      responses:
+        "200":
+          description: Refresh completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WinnerAccountRefreshResult"
+  /winner-accounts/suggestions/{id}/mirror:
+    post:
+      operationId: mirrorWinnerSuggestion
+      tags: [winnerAccounts]
+      summary: Open a paper trade from a mirror suggestion.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MirrorSuggestionActionBody"
+      responses:
+        "200":
+          description: Suggestion was mirrored to a paper trade.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MirrorSuggestionResult"
+        "400":
+          description: Invalid request, suggestion already actioned, or risk-cap rejection.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "404":
+          description: Suggestion not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /winner-accounts/suggestions/{id}/dismiss:
+    post:
+      operationId: dismissWinnerSuggestion
+      tags: [winnerAccounts]
+      summary: Dismiss a mirror suggestion without mirroring it.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dismissed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MirrorSuggestion"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /anthropic/conversations:
     get:
@@ -1722,3 +1849,222 @@ components:
           type: string
       required:
         - error
+
+    WinnerAccountPnlPoint:
+      type: object
+      required: [t, pnlUsd]
+      properties:
+        t:
+          type: string
+          format: date-time
+        pnlUsd:
+          type: number
+
+    WinnerAccount:
+      type: object
+      description: |
+        High-performing tracked wallet, with the metrics shown on the list
+        view. `pnlSparkline` is a small recent-history sample (typically the
+        last 24 snapshots) used to render the inline sparkline.
+      required:
+        - id
+        - source
+        - address
+        - label
+        - hitRate
+        - avgEdge
+        - pnlUsd
+        - activePositions
+        - closedPositions
+        - tracked
+        - pnlSparkline
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: integer }
+        source: { type: string }
+        address: { type: string }
+        label: { type: string }
+        notes:
+          type: string
+          nullable: true
+        rank:
+          type: integer
+          nullable: true
+        hitRate: { type: number }
+        avgEdge: { type: number }
+        pnlUsd: { type: number }
+        activePositions: { type: integer }
+        closedPositions: { type: integer }
+        tracked: { type: boolean }
+        lastSyncedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pnlSparkline:
+          type: array
+          items:
+            $ref: "#/components/schemas/WinnerAccountPnlPoint"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    WinnerAccountPosition:
+      type: object
+      description: A position the wallet currently holds.
+      required: [marketKey, question, direction, entryProb, sizeUsd, openedAt]
+      properties:
+        marketKey: { type: string }
+        question: { type: string }
+        direction:
+          $ref: "#/components/schemas/Direction"
+        entryProb: { type: number }
+        currentProb:
+          type: number
+          nullable: true
+        sizeUsd: { type: number }
+        unrealizedPnl:
+          type: number
+          nullable: true
+        openedAt:
+          type: string
+          format: date-time
+        opportunityId:
+          type: integer
+          nullable: true
+
+    WinnerAccountClosedPosition:
+      type: object
+      description: A position the wallet has already closed.
+      required: [marketKey, question, direction, entryProb, exitProb, sizeUsd, pnlUsd, closedAt]
+      properties:
+        marketKey: { type: string }
+        question: { type: string }
+        direction:
+          $ref: "#/components/schemas/Direction"
+        entryProb: { type: number }
+        exitProb: { type: number }
+        sizeUsd: { type: number }
+        pnlUsd: { type: number }
+        closedAt:
+          type: string
+          format: date-time
+
+    MirrorSuggestion:
+      type: object
+      description: |
+        A "mirror this trade" suggestion produced by the wallet refresh job.
+        The Reasoning Summary is structured the same way as the rest of the
+        app: observed / inferred / speculation / unknowns / risk flags.
+      required:
+        - id
+        - walletId
+        - marketKey
+        - question
+        - direction
+        - entryProb
+        - suggestedSizeUsd
+        - walletSizeUsd
+        - rationale
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: integer }
+        walletId: { type: integer }
+        opportunityId:
+          type: integer
+          nullable: true
+        marketKey: { type: string }
+        question: { type: string }
+        direction:
+          $ref: "#/components/schemas/Direction"
+        entryProb: { type: number }
+        suggestedSizeUsd: { type: number }
+        walletSizeUsd: { type: number }
+        rationale:
+          $ref: "#/components/schemas/Rationale"
+        status:
+          type: string
+          enum: [pending, mirrored, dismissed]
+        paperTradeId:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    WinnerAccountDetail:
+      allOf:
+        - $ref: "#/components/schemas/WinnerAccount"
+        - type: object
+          required: [snapshots, openPositions, recentClosedPositions, suggestions]
+          properties:
+            snapshots:
+              type: array
+              items:
+                type: object
+                required: [capturedAt, pnlUsd, activePositions, closedPositions, hitRate, avgEdge]
+                properties:
+                  capturedAt:
+                    type: string
+                    format: date-time
+                  pnlUsd: { type: number }
+                  activePositions: { type: integer }
+                  closedPositions: { type: integer }
+                  hitRate: { type: number }
+                  avgEdge: { type: number }
+            openPositions:
+              type: array
+              items:
+                $ref: "#/components/schemas/WinnerAccountPosition"
+            recentClosedPositions:
+              type: array
+              items:
+                $ref: "#/components/schemas/WinnerAccountClosedPosition"
+            suggestions:
+              type: array
+              items:
+                $ref: "#/components/schemas/MirrorSuggestion"
+
+    WinnerAccountRefreshResult:
+      type: object
+      required: [walletsRefreshed, snapshotsInserted, suggestionsCreated, ranAt]
+      properties:
+        walletsRefreshed: { type: integer }
+        snapshotsInserted: { type: integer }
+        suggestionsCreated: { type: integer }
+        ranAt:
+          type: string
+          format: date-time
+
+    MirrorSuggestionActionBody:
+      type: object
+      description: Optional override for the mirror action.
+      properties:
+        sizeUsd:
+          type: number
+          minimum: 1
+          description: |
+            Override the orchestrator's suggested size. Defaults to the
+            suggestion's `suggestedSizeUsd`. Subject to the same risk caps
+            as a normal paper trade (max position USD, watch-only mode,
+            kill switch).
+        note:
+          type: string
+          maxLength: 500
+
+    MirrorSuggestionResult:
+      type: object
+      required: [suggestion, paperTrade]
+      properties:
+        suggestion:
+          $ref: "#/components/schemas/MirrorSuggestion"
+        paperTrade:
+          $ref: "#/components/schemas/PaperTrade"

@@ -19,6 +19,8 @@ import OpenClaw from "@/pages/OpenClaw";
 import Risk from "@/pages/Risk";
 import Agent from "@/pages/Agent";
 import Backtest from "@/pages/Backtest";
+import WinnerAccounts from "@/pages/WinnerAccounts";
+import WinnerAccountDetail from "@/pages/WinnerAccountDetail";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -41,6 +43,8 @@ function Router() {
         <Route path="/risk" component={Risk} />
         <Route path="/agent" component={Agent} />
         <Route path="/backtest" component={Backtest} />
+        <Route path="/winners/:id" component={WinnerAccountDetail} />
+        <Route path="/winners" component={WinnerAccounts} />
         <Route component={NotFound} />
       </Switch>
     </Shell>

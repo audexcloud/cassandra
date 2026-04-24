@@ -37,6 +37,10 @@ import type {
   ListOpportunitiesParams,
   ListPaperTradesParams,
   ListSignalsParams,
+  ListWinnerAccountsParams,
+  MirrorSuggestion,
+  MirrorSuggestionActionBody,
+  MirrorSuggestionResult,
   OpenClawJob,
   OpenClawOnDemandJobBody,
   OpenClawOnDemandJobKind,
@@ -51,6 +55,9 @@ import type {
   StructuredAgentResponse,
   SweepPaperTradeResponse,
   UpdateRiskConfigBody,
+  WinnerAccount,
+  WinnerAccountDetail,
+  WinnerAccountRefreshResult,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -2111,6 +2118,446 @@ export const useRunBacktest = <
   TContext
 > => {
   return useMutation(getRunBacktestMutationOptions(options));
+};
+
+/**
+ * @summary List tracked high-performing wallets, ranked by P&L.
+ */
+export const getListWinnerAccountsUrl = (params?: ListWinnerAccountsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/winner-accounts?${stringifiedParams}`
+    : `/api/winner-accounts`;
+};
+
+export const listWinnerAccounts = async (
+  params?: ListWinnerAccountsParams,
+  options?: RequestInit,
+): Promise<WinnerAccount[]> => {
+  return customFetch<WinnerAccount[]>(getListWinnerAccountsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListWinnerAccountsQueryKey = (
+  params?: ListWinnerAccountsParams,
+) => {
+  return [`/api/winner-accounts`, ...(params ? [params] : [])] as const;
+};
+
+export const getListWinnerAccountsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listWinnerAccounts>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListWinnerAccountsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWinnerAccounts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListWinnerAccountsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listWinnerAccounts>>
+  > = ({ signal }) => listWinnerAccounts(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listWinnerAccounts>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListWinnerAccountsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listWinnerAccounts>>
+>;
+export type ListWinnerAccountsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List tracked high-performing wallets, ranked by P&L.
+ */
+
+export function useListWinnerAccounts<
+  TData = Awaited<ReturnType<typeof listWinnerAccounts>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListWinnerAccountsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listWinnerAccounts>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListWinnerAccountsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Detail view for a tracked wallet (snapshots, suggestions, recent positions)
+ */
+export const getGetWinnerAccountUrl = (id: number) => {
+  return `/api/winner-accounts/${id}`;
+};
+
+export const getWinnerAccount = async (
+  id: number,
+  options?: RequestInit,
+): Promise<WinnerAccountDetail> => {
+  return customFetch<WinnerAccountDetail>(getGetWinnerAccountUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetWinnerAccountQueryKey = (id: number) => {
+  return [`/api/winner-accounts/${id}`] as const;
+};
+
+export const getGetWinnerAccountQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWinnerAccount>>,
+  TError = ErrorType<ApiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWinnerAccount>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetWinnerAccountQueryKey(id);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getWinnerAccount>>
+  > = ({ signal }) => getWinnerAccount(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWinnerAccount>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWinnerAccountQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWinnerAccount>>
+>;
+export type GetWinnerAccountQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Detail view for a tracked wallet (snapshots, suggestions, recent positions)
+ */
+
+export function useGetWinnerAccount<
+  TData = Awaited<ReturnType<typeof getWinnerAccount>>,
+  TError = ErrorType<ApiError>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWinnerAccount>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWinnerAccountQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Manually trigger a wallet-snapshot refresh cycle.
+ */
+export const getRefreshWinnerAccountsUrl = () => {
+  return `/api/winner-accounts/refresh`;
+};
+
+export const refreshWinnerAccounts = async (
+  options?: RequestInit,
+): Promise<WinnerAccountRefreshResult> => {
+  return customFetch<WinnerAccountRefreshResult>(
+    getRefreshWinnerAccountsUrl(),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRefreshWinnerAccountsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshWinnerAccounts>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refreshWinnerAccounts>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["refreshWinnerAccounts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refreshWinnerAccounts>>,
+    void
+  > = () => {
+    return refreshWinnerAccounts(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshWinnerAccountsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refreshWinnerAccounts>>
+>;
+
+export type RefreshWinnerAccountsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Manually trigger a wallet-snapshot refresh cycle.
+ */
+export const useRefreshWinnerAccounts = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshWinnerAccounts>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof refreshWinnerAccounts>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRefreshWinnerAccountsMutationOptions(options));
+};
+
+/**
+ * @summary Open a paper trade from a mirror suggestion.
+ */
+export const getMirrorWinnerSuggestionUrl = (id: number) => {
+  return `/api/winner-accounts/suggestions/${id}/mirror`;
+};
+
+export const mirrorWinnerSuggestion = async (
+  id: number,
+  mirrorSuggestionActionBody?: MirrorSuggestionActionBody,
+  options?: RequestInit,
+): Promise<MirrorSuggestionResult> => {
+  return customFetch<MirrorSuggestionResult>(getMirrorWinnerSuggestionUrl(id), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(mirrorSuggestionActionBody),
+  });
+};
+
+export const getMirrorWinnerSuggestionMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mirrorWinnerSuggestion>>,
+    TError,
+    { id: number; data: BodyType<MirrorSuggestionActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mirrorWinnerSuggestion>>,
+  TError,
+  { id: number; data: BodyType<MirrorSuggestionActionBody> },
+  TContext
+> => {
+  const mutationKey = ["mirrorWinnerSuggestion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mirrorWinnerSuggestion>>,
+    { id: number; data: BodyType<MirrorSuggestionActionBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return mirrorWinnerSuggestion(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MirrorWinnerSuggestionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof mirrorWinnerSuggestion>>
+>;
+export type MirrorWinnerSuggestionMutationBody =
+  BodyType<MirrorSuggestionActionBody>;
+export type MirrorWinnerSuggestionMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Open a paper trade from a mirror suggestion.
+ */
+export const useMirrorWinnerSuggestion = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mirrorWinnerSuggestion>>,
+    TError,
+    { id: number; data: BodyType<MirrorSuggestionActionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof mirrorWinnerSuggestion>>,
+  TError,
+  { id: number; data: BodyType<MirrorSuggestionActionBody> },
+  TContext
+> => {
+  return useMutation(getMirrorWinnerSuggestionMutationOptions(options));
+};
+
+/**
+ * @summary Dismiss a mirror suggestion without mirroring it.
+ */
+export const getDismissWinnerSuggestionUrl = (id: number) => {
+  return `/api/winner-accounts/suggestions/${id}/dismiss`;
+};
+
+export const dismissWinnerSuggestion = async (
+  id: number,
+  options?: RequestInit,
+): Promise<MirrorSuggestion> => {
+  return customFetch<MirrorSuggestion>(getDismissWinnerSuggestionUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDismissWinnerSuggestionMutationOptions = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissWinnerSuggestion>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof dismissWinnerSuggestion>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["dismissWinnerSuggestion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof dismissWinnerSuggestion>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return dismissWinnerSuggestion(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DismissWinnerSuggestionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof dismissWinnerSuggestion>>
+>;
+
+export type DismissWinnerSuggestionMutationError = ErrorType<ApiError>;
+
+/**
+ * @summary Dismiss a mirror suggestion without mirroring it.
+ */
+export const useDismissWinnerSuggestion = <
+  TError = ErrorType<ApiError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof dismissWinnerSuggestion>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof dismissWinnerSuggestion>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDismissWinnerSuggestionMutationOptions(options));
 };
 
 /**

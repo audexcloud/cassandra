@@ -34,6 +34,13 @@ This is **Cassandra** — a single-user, local-first personal predictive intelli
 - **Risk Settings** — kill switch, max Kelly fraction, max position USD, bankroll. `liveExecutionEnabled` is read-only (always false) and explained.
 - **Agent Chat** — streaming Claude conversation grounded in the live opportunity universe and signal feed; persists messages in Postgres.
 
+## Winner Accounts (Task #3)
+
+- **DB**: `walletProfiles`, `walletSnapshots`, `mirrorSuggestions` in `lib/db/src/schema/winnerWallets.ts`. Snapshots are pruned to the last 200 rows per wallet on each refresh.
+- **Refresh job**: `refresh_winner_wallets` runs every 60s via `runScheduledJobs` in `openclaw.ts`, calling `refreshWinnerWallets()` in `lib/cassandra/winnerWallets.ts`. Mock wallet state lives in-process; new positions become `mirrorSuggestions` rows when their `marketKey` overlaps with an ingested opportunity.
+- **API**: `/api/winner-accounts` (list with rank + sparkline), `/:id` (detail with positions, snapshots, suggestions), `/refresh` (manual trigger), `/suggestions/:id/mirror` (creates a paper trade through `evaluateRiskGate`), `/suggestions/:id/dismiss`.
+- **UI**: `pages/WinnerAccounts.tsx` (ranked list + Trophy nav link in `Shell.tsx`) and `pages/WinnerAccountDetail.tsx` (KPIs, P&L area chart, four tabs, mirror dialog). Each suggestion stores a five-section `rationale` JSONB and is rendered with the same Reasoning Summary convention as opportunities.
+
 ## OpenClaw orchestrator
 
 `artifacts/api-server/src/lib/cassandra/openclaw.ts` runs every 60s (and once at startup). It calls each live connector under `artifacts/api-server/src/lib/cassandra/connectors/` (`manifold`, `polymarket`, `kalshi`, `metaculus`, `comex`, `news_wires`), upserts opportunities (unique on `source + marketKey`), inserts signal events, recomputes `edgeScore` / `kellyFraction` / `suggestedDirection`, prunes the signal table to the most recent 500 rows, and writes job rows + an audit-log entry per cycle. Connector status is held in process memory and exposed via `GET /api/openclaw/status`.

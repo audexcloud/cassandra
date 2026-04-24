@@ -10,6 +10,7 @@ import riskRouter from "./risk";
 import anthropicRouter from "./anthropic";
 import agentStructuredRouter from "./agentStructured";
 import backtestRouter from "./backtest";
+import winnerAccountsRouter from "./winnerAccounts";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(riskRouter);
 router.use(anthropicRouter);
 router.use(agentStructuredRouter);
 router.use(backtestRouter);
+router.use(winnerAccountsRouter);
 
 export default router;

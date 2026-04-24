@@ -652,6 +652,142 @@ export interface AnthropicError {
   error: string;
 }
 
+export interface WinnerAccountPnlPoint {
+  t: string;
+  pnlUsd: number;
+}
+
+/**
+ * High-performing tracked wallet, with the metrics shown on the list
+view. `pnlSparkline` is a small recent-history sample (typically the
+last 24 snapshots) used to render the inline sparkline.
+
+ */
+export interface WinnerAccount {
+  id: number;
+  source: string;
+  address: string;
+  label: string;
+  notes?: string | null;
+  rank?: number | null;
+  hitRate: number;
+  avgEdge: number;
+  pnlUsd: number;
+  activePositions: number;
+  closedPositions: number;
+  tracked: boolean;
+  lastSyncedAt?: string | null;
+  pnlSparkline: WinnerAccountPnlPoint[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * A position the wallet currently holds.
+ */
+export interface WinnerAccountPosition {
+  marketKey: string;
+  question: string;
+  direction: Direction;
+  entryProb: number;
+  currentProb?: number | null;
+  sizeUsd: number;
+  unrealizedPnl?: number | null;
+  openedAt: string;
+  opportunityId?: number | null;
+}
+
+/**
+ * A position the wallet has already closed.
+ */
+export interface WinnerAccountClosedPosition {
+  marketKey: string;
+  question: string;
+  direction: Direction;
+  entryProb: number;
+  exitProb: number;
+  sizeUsd: number;
+  pnlUsd: number;
+  closedAt: string;
+}
+
+export type MirrorSuggestionStatus =
+  (typeof MirrorSuggestionStatus)[keyof typeof MirrorSuggestionStatus];
+
+export const MirrorSuggestionStatus = {
+  pending: "pending",
+  mirrored: "mirrored",
+  dismissed: "dismissed",
+} as const;
+
+/**
+ * A "mirror this trade" suggestion produced by the wallet refresh job.
+The Reasoning Summary is structured the same way as the rest of the
+app: observed / inferred / speculation / unknowns / risk flags.
+
+ */
+export interface MirrorSuggestion {
+  id: number;
+  walletId: number;
+  opportunityId?: number | null;
+  marketKey: string;
+  question: string;
+  direction: Direction;
+  entryProb: number;
+  suggestedSizeUsd: number;
+  walletSizeUsd: number;
+  rationale: Rationale;
+  status: MirrorSuggestionStatus;
+  paperTradeId?: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type WinnerAccountDetailSnapshotsItem = {
+  capturedAt: string;
+  pnlUsd: number;
+  activePositions: number;
+  closedPositions: number;
+  hitRate: number;
+  avgEdge: number;
+};
+
+export type WinnerAccountDetail = WinnerAccount & {
+  snapshots: WinnerAccountDetailSnapshotsItem[];
+  openPositions: WinnerAccountPosition[];
+  recentClosedPositions: WinnerAccountClosedPosition[];
+  suggestions: MirrorSuggestion[];
+};
+
+export interface WinnerAccountRefreshResult {
+  walletsRefreshed: number;
+  snapshotsInserted: number;
+  suggestionsCreated: number;
+  ranAt: string;
+}
+
+/**
+ * Optional override for the mirror action.
+ */
+export interface MirrorSuggestionActionBody {
+  /**
+   * Override the orchestrator's suggested size. Defaults to the
+suggestion's `suggestedSizeUsd`. Subject to the same risk caps
+as a normal paper trade (max position USD, watch-only mode,
+kill switch).
+
+   * @minimum 1
+   */
+  sizeUsd?: number;
+  /** @maxLength 500 */
+  note?: string;
+}
+
+export interface MirrorSuggestionResult {
+  suggestion: MirrorSuggestion;
+  paperTrade: PaperTrade;
+}
+
 export type ListOpportunitiesParams = {
   domain?: Domain;
   source?: string;
@@ -722,3 +858,12 @@ export const GetBacktestCalibrationLookbackDays = {
   NUMBER_90: 90,
   NUMBER_365: 365,
 } as const;
+
+export type ListWinnerAccountsParams = {
+  source?: string;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
