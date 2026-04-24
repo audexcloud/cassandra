@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Radio, RefreshCw, Server, AlertCircle, PlaySquare, ShieldAlert, CheckCircle2 } from "lucide-react";
+import { Radio, RefreshCw, Server, AlertCircle, PlaySquare, ShieldAlert, CheckCircle2, Database, Calendar, ListChecks } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetOpenClawStatusQueryKey, getListOpenClawJobsQueryKey } from "@workspace/api-client-react";
@@ -139,6 +139,67 @@ export default function OpenClaw() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Long-term memory inventory — the orchestrator writes
+              observations / narratives / parallels / anomalies as it runs;
+              showing the counts here is the spec's "command center" view. */}
+          {status.memoryStats && (
+            <Card className="bg-card/50 border-border/50">
+              <CardHeader className="pb-3 border-b border-border/30">
+                <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground flex items-center">
+                  <Database className="w-4 h-4 mr-2" /> Memory
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="grid grid-cols-2 divide-x divide-y divide-border/30">
+                  {[
+                    { label: "Observations", value: status.memoryStats.observations },
+                    { label: "Narratives", value: status.memoryStats.narratives },
+                    { label: "Parallels", value: status.memoryStats.parallels },
+                    { label: "Anomalies", value: status.memoryStats.anomalies },
+                  ].map((m) => (
+                    <div key={m.label} className="p-3">
+                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                        {m.label}
+                      </div>
+                      <div className="text-xl font-bold font-mono">{m.value.toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="p-3 border-t border-border/30 flex justify-between items-center text-xs">
+                  <span className="text-muted-foreground uppercase tracking-wider flex items-center">
+                    <Calendar className="w-3 h-3 mr-1" /> Last Daily Brief
+                  </span>
+                  <span className="font-mono">
+                    {status.lastDailyBriefAt ? formatDateTime(status.lastDailyBriefAt) : "Never"}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Scheduled job kinds: makes the orchestrator's contract explicit
+              so the operator knows what runs each cycle. */}
+          {status.scheduledJobs && status.scheduledJobs.length > 0 && (
+            <Card className="bg-card/50 border-border/50">
+              <CardHeader className="pb-3 border-b border-border/30">
+                <CardTitle className="text-sm font-medium uppercase tracking-wider text-muted-foreground flex items-center">
+                  <ListChecks className="w-4 h-4 mr-2" /> Scheduled Jobs
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 flex flex-wrap gap-1.5">
+                {status.scheduledJobs.map((j) => (
+                  <Badge
+                    key={j}
+                    variant="outline"
+                    className="uppercase text-[10px] tracking-wider rounded-sm font-mono"
+                  >
+                    {j.replace(/_/g, " ")}
+                  </Badge>
+                ))}
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="bg-card/50 border-border/50">
             <CardHeader className="pb-3 border-b border-border/30">
