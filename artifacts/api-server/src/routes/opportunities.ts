@@ -12,8 +12,10 @@ import { opportunities, signalEvents, paperTrades } from "@workspace/db";
 import { and, desc, eq, gte } from "drizzle-orm";
 import { weightedRandomPick } from "../lib/cassandra/scoring";
 import { generateTradePlan, type ReasoningSummary } from "../lib/cassandra/pipeline";
+import { OPPORTUNITY_STALE_AFTER_MS } from "../lib/cassandra/openclaw";
 
-const STALE_AFTER_MS = 5 * 60 * 1000;
+const STALE_AFTER_MS = OPPORTUNITY_STALE_AFTER_MS;
+const freshSince = (): Date => new Date(Date.now() - STALE_AFTER_MS);
 // Trade-plan defaults — reflect realistic single-user paper bankroll.
 const PLAN_BANKROLL_USD = 10_000;
 const PLAN_MAX_KELLY = 0.25;
@@ -28,7 +30,11 @@ router.get("/opportunities", async (req, res) => {
     return;
   }
   const { domain, source, minEdge, limit } = parsed.data;
-  const filters = [];
+  // Hide stale rows: opportunities are upserted by (source, marketKey), so
+  // entries from earlier connector implementations or seed data linger in
+  // the table after the active connectors stop emitting them. Filtering by
+  // updatedAt ensures the dashboard / universe only show live markets.
+  const filters = [gte(opportunities.updatedAt, freshSince())];
   if (domain) filters.push(eq(opportunities.domain, domain));
   if (source) filters.push(eq(opportunities.source, source));
   if (typeof minEdge === "number") filters.push(gte(opportunities.edgeScore, minEdge));
@@ -36,7 +42,7 @@ router.get("/opportunities", async (req, res) => {
   const rows = await db
     .select()
     .from(opportunities)
-    .where(filters.length > 0 ? and(...filters) : undefined)
+    .where(and(...filters))
     .orderBy(desc(opportunities.edgeScore))
     .limit(limit ?? 50);
 
@@ -47,6 +53,7 @@ router.get("/opportunities/top10", async (_req, res) => {
   const rows = await db
     .select()
     .from(opportunities)
+    .where(gte(opportunities.updatedAt, freshSince()))
     .orderBy(desc(opportunities.edgeScore))
     .limit(10);
   res.json(ListTopOpportunitiesResponse.parse(rows.map(serializeOpportunity)));
@@ -56,7 +63,12 @@ router.get("/opportunities/random", async (_req, res) => {
   // Weighted random: opportunities with higher edgeScore are proportionally
   // more likely to be surfaced. This is what the spec calls a "weighted
   // random surprise" — uniform random would bias toward low-edge noise.
-  const rows = await db.select().from(opportunities);
+  // Filter to fresh rows so the surprise pick can never land on a stale
+  // market that no connector is updating anymore.
+  const rows = await db
+    .select()
+    .from(opportunities)
+    .where(gte(opportunities.updatedAt, freshSince()));
   const pick = weightedRandomPick(rows);
   if (!pick) {
     res.status(404).json({ error: "No opportunities yet" });

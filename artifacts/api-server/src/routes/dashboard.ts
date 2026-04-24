@@ -10,13 +10,18 @@ import {
   scoringModelVersions,
 } from "@workspace/db";
 import { sql, gte, eq, inArray, desc } from "drizzle-orm";
-import { openClawSnapshot } from "../lib/cassandra/openclaw";
+import { openClawSnapshot, OPPORTUNITY_STALE_AFTER_MS } from "../lib/cassandra/openclaw";
 import { priceForSide } from "../lib/cassandra/scoring";
 
 const router: IRouter = Router();
 
 router.get("/dashboard/summary", async (_req, res) => {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // Hide opportunities not refreshed in the last several connector cycles
+  // so the dashboard counts, top-edge, top-opportunities preview, and
+  // domain breakdown all reflect only live markets — not stale rows from
+  // earlier connector versions or seed data.
+  const freshOppCutoff = new Date(Date.now() - OPPORTUNITY_STALE_AFTER_MS);
 
   const [
     totalRow,
@@ -29,13 +34,17 @@ router.get("/dashboard/summary", async (_req, res) => {
     topEdgeRow,
     cfgRow,
   ] = await Promise.all([
-    db.select({ n: sql<number>`count(*)::int` }).from(opportunities),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(opportunities)
+      .where(gte(opportunities.updatedAt, freshOppCutoff)),
     db
       .select({
         domain: opportunities.domain,
         count: sql<number>`count(*)::int`,
       })
       .from(opportunities)
+      .where(gte(opportunities.updatedAt, freshOppCutoff))
       .groupBy(opportunities.domain),
     db
       .select({ n: sql<number>`count(*)::int` })
@@ -69,7 +78,8 @@ router.get("/dashboard/summary", async (_req, res) => {
       .where(eq(paperTrades.status, "open")),
     db
       .select({ topEdge: sql<number>`coalesce(max(${opportunities.edgeScore}), 0)::float` })
-      .from(opportunities),
+      .from(opportunities)
+      .where(gte(opportunities.updatedAt, freshOppCutoff)),
     db.select().from(riskConfig).limit(1),
   ]);
 
@@ -119,6 +129,7 @@ router.get("/dashboard/summary", async (_req, res) => {
           marketProb: opportunities.marketProb,
         })
         .from(opportunities)
+        .where(gte(opportunities.updatedAt, freshOppCutoff))
         .orderBy(desc(opportunities.edgeScore))
         .limit(5),
       db

@@ -29,6 +29,21 @@ import { logger } from "../logger";
 const CYCLE_INTERVAL_SEC = 60;
 
 /**
+ * Window an opportunity must have been refreshed within to be considered
+ * "fresh" by list endpoints. Opportunities are upserted by (source,
+ * marketKey), so rows from earlier connector implementations (or from old
+ * mock seeds) can linger in the table even after the active connectors
+ * stop emitting them. Anything not touched by any connector cycle in the
+ * last `OPPORTUNITY_STALE_AFTER_MS` is excluded from the dashboard, top
+ * 10, universe, and random pickers so the UI only shows live markets.
+ *
+ * Sized at five cycles: enough headroom that a single missed cycle (or a
+ * connector blip) does not flap rows in and out of the UI, but tight
+ * enough that genuinely abandoned market keys disappear quickly.
+ */
+export const OPPORTUNITY_STALE_AFTER_MS = 5 * CYCLE_INTERVAL_SEC * 1000;
+
+/**
  * Named scheduled job kinds the orchestrator runs each cycle. The ingest
  * jobs are per-connector; the named jobs below are higher-level passes
  * that operate on the *output* of ingestion (scoring, monitoring, briefs).
