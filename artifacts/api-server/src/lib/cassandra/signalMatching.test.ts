@@ -62,11 +62,12 @@ describe("matchSignalsToMarket", () => {
     const matched = matchSignalsToMarket(
       makeMarket({ domain: "macro", question: "Will the Fed cut rates in June?" }),
       [
-        // metals-domain signal but mentions 'fed' keyword in body
+        // metals-domain signal but with multiple macro keywords (fed + rate)
+        // so the weak-keyword filter still lets the match through.
         makeAmbient({
           domain: "metals",
-          title: "Gold rallies as Fed sounds dovish",
-          body: "Gold up on dovish Fed comments.",
+          title: "Gold rallies as Fed signals rate cut",
+          body: "Gold up on dovish Fed comments and an expected rate cut.",
         }),
       ],
     );
@@ -87,6 +88,227 @@ describe("matchSignalsToMarket", () => {
       ],
     );
     expect(matched).toHaveLength(0);
+  });
+
+  // --- Entity disambiguation / weak-keyword filter ------------------------
+
+  it("drops a 'trump' match on an unrelated golf-tournament headline", () => {
+    // Real-world noise: a Trump-branded golf tournament headline matches
+    // 'trump' but has nothing to do with politics or tariffs.
+    const matched = matchSignalsToMarket(
+      makeMarket({
+        domain: "policy",
+        question: "Will Trump sign new tariffs by July?",
+      }),
+      [
+        makeAmbient({
+          domain: "policy", // upstream connector tagged it 'policy' off 'trump'
+          source: "bbc_world",
+          kind: "news",
+          title: "Trump International golf tournament returns to Doral",
+          body: "PGA event hosted at Trump-branded resort this weekend.",
+        }),
+      ],
+    );
+    expect(matched).toHaveLength(0);
+  });
+
+  it("keeps a 'trump' match when a second policy keyword co-occurs", () => {
+    const matched = matchSignalsToMarket(
+      makeMarket({
+        domain: "policy",
+        question: "Will Trump sign new tariffs by July?",
+      }),
+      [
+        makeAmbient({
+          domain: "policy",
+          source: "bbc_world",
+          kind: "news",
+          title: "Trump promises sweeping tariffs on EU imports",
+          body: "Tariff package to be signed in the coming weeks.",
+        }),
+      ],
+    );
+    expect(matched).toHaveLength(1);
+    expect(matched[0].matchReason).toContain("trump");
+    expect(matched[0].matchReason).toContain("tariff");
+  });
+
+  it("does not match 'fed' inside 'Federer' (word-boundary regex)", () => {
+    // Substring matching used to fire 'fed' on any Federer headline, then
+    // route the (misclassified) signal into Fed-rate markets.
+    const matched = matchSignalsToMarket(
+      makeMarket({
+        domain: "macro",
+        question: "Will the Fed cut rates in June?",
+      }),
+      [
+        makeAmbient({
+          domain: "geopolitics",
+          source: "bbc_world",
+          kind: "news",
+          title: "Federer announces final tour stop in Basel",
+          body: "Roger Federer to retire after one last home appearance.",
+        }),
+      ],
+    );
+    expect(matched).toHaveLength(0);
+  });
+
+  it("drops a 'court' match on a basketball recap", () => {
+    const matched = matchSignalsToMarket(
+      makeMarket({
+        domain: "policy",
+        question: "Will the Supreme Court overturn the ruling by Q4?",
+      }),
+      [
+        makeAmbient({
+          domain: "policy",
+          source: "hackernews",
+          kind: "social_cluster",
+          title: "Lakers dominate on the court vs Celtics",
+          body: "NBA playoff coverage continues tonight on TNT.",
+        }),
+      ],
+    );
+    expect(matched).toHaveLength(0);
+  });
+
+  it("keeps a 'court' match when 'ruling' also fires (both policy)", () => {
+    // Two weak keywords from the same domain mutually qualify each other.
+    const matched = matchSignalsToMarket(
+      makeMarket({
+        domain: "policy",
+        question: "Will the Supreme Court overturn the ruling by Q4?",
+      }),
+      [
+        makeAmbient({
+          domain: "policy",
+          source: "bbc_world",
+          kind: "news",
+          title: "Court ruling expected next week in landmark case",
+          body: "Justices to issue ruling on long-running antitrust dispute.",
+        }),
+      ],
+    );
+    expect(matched).toHaveLength(1);
+  });
+
+  it("keeps a strong keyword (e.g. 'iran') even when it's the only hit", () => {
+    // Strong keywords are not subject to the disambiguation filter.
+    const matched = matchSignalsToMarket(
+      makeMarket({
+        domain: "geopolitics",
+        question: "Will Iran-Israel ceasefire hold by July?",
+      }),
+      [
+        makeAmbient({
+          domain: "geopolitics",
+          source: "bbc_world",
+          kind: "news",
+          title: "Iran tests new ballistic missile, IAEA reports",
+          body: "Tehran announces expansion of its missile test program.",
+        }),
+      ],
+    );
+    expect(matched).toHaveLength(1);
+  });
+
+  it("does not match 'oil' inside 'snake oil' (word-boundary regex)", () => {
+    // 'snake oil' is one word away from 'oil' but the substring is real;
+    // word-boundary matching handles this correctly because 'snake oil'
+    // genuinely contains the token 'oil'. To exercise the actual entity-
+    // disambiguation path we pick a headline where 'oil' is the only
+    // commodities token.
+    const matched = matchSignalsToMarket(
+      makeMarket({
+        domain: "commodities",
+        question: "Will WTI crude oil close above $90 by year end?",
+      }),
+      [
+        makeAmbient({
+          domain: "commodities",
+          source: "hackernews",
+          kind: "social_cluster",
+          title: "Snake oil salesmen are back, this time in AI",
+          body: "Op-ed argues much of the hype is overstated.",
+        }),
+      ],
+    );
+    // 'oil' alone is weak and there is no other commodities token in the
+    // signal, so the match should be dropped.
+    expect(matched).toHaveLength(0);
+  });
+
+  it("keeps an 'oil' headline when 'crude' or 'opec' also fires", () => {
+    const matched = matchSignalsToMarket(
+      makeMarket({
+        domain: "commodities",
+        question: "Will WTI crude oil close above $90 by year end?",
+      }),
+      [
+        makeAmbient({
+          domain: "commodities",
+          source: "bbc_world",
+          kind: "news",
+          title: "OPEC weighs deeper oil output cuts as crude slips",
+          body: "Saudi-led group considers further crude production cuts.",
+        }),
+      ],
+    );
+    expect(matched).toHaveLength(1);
+    expect(matched[0].matchScore).toBe(0.6);
+  });
+
+  it("measurably reduces the matched count over a noisy real-world batch", () => {
+    // Mixed batch of headlines drawn from typical BBC/HN content. About
+    // half have a single weak keyword on an off-topic story; the rest are
+    // genuinely on-topic. The post-filter should drop the noisy ones
+    // without touching the high-signal matches.
+    const policyMarket = makeMarket({
+      domain: "policy",
+      question: "Will Trump sign new tariffs by July?",
+    });
+    const ambient = [
+      // --- noise (single weak keyword, off-topic) ---
+      makeAmbient({
+        domain: "policy",
+        title: "Trump golf course wins design award",
+        body: "Industry magazine highlights resort architecture.",
+      }),
+      makeAmbient({
+        domain: "policy",
+        title: "Trump-branded steaks return to retail",
+        body: "Limited-edition launch announced this week.",
+      }),
+      makeAmbient({
+        domain: "geopolitics",
+        title: "Lakers win on the court in overtime",
+        body: "NBA recap from last night.",
+      }),
+      makeAmbient({
+        domain: "macro",
+        title: "Federer announces farewell tour",
+        body: "Tennis great to retire after season.",
+      }),
+      // --- genuine signal (multiple domain-aligned keywords) ---
+      makeAmbient({
+        domain: "policy",
+        title: "Trump promises sweeping tariffs on EU imports",
+        body: "Senate response to the tariff package expected next week.",
+      }),
+      makeAmbient({
+        domain: "policy",
+        title: "White House drafts new tariff order",
+        body: "Trump administration weighs sanctions alongside tariffs.",
+      }),
+    ];
+    const matched = matchSignalsToMarket(policyMarket, ambient);
+    // Only the two genuine signals should survive.
+    expect(matched).toHaveLength(2);
+    for (const m of matched) {
+      expect(m.signal.title.toLowerCase()).toMatch(/tariff|trump promises/);
+    }
   });
 
   it("orders matches by descending score then descending impact", () => {

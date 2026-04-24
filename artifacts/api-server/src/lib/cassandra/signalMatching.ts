@@ -20,19 +20,30 @@ import { aggregateModelProb, clamp, clamp01, type RawSignal } from "./scoring";
 
 /**
  * Topic keywords mapped to their canonical domain. A signal's title/body and
- * a market's question are tokenized; any keyword present in either is
- * treated as a topic hit. Two-word phrases (e.g. "natural gas") are matched
- * with `String.includes` rather than token-wise.
+ * a market's question are scanned with word-boundary regexes; any keyword
+ * present in either is treated as a topic hit. Word boundaries mean
+ * "Federer" no longer matches "fed", "Fedex" no longer matches "fed", etc.
+ *
+ * Each keyword can be marked `weak: true`. Weak keywords are generic English
+ * words or proper nouns that show up frequently in unrelated contexts
+ * ("trump" in a golf-tournament headline, "court" in a basketball recap,
+ * "fed" inside "Federer"…). A weak keyword on its own is not enough to
+ * route a signal into a market — it must co-occur with at least one other
+ * topic keyword from the same domain inside the signal text. See
+ * `qualifyWeakHits` for the exact rule.
  */
+type TopicDomain =
+  | "metals"
+  | "commodities"
+  | "macro"
+  | "policy"
+  | "geopolitics"
+  | "prediction_market";
+
 const TOPIC_KEYWORDS: Array<{
   keyword: string;
-  domain:
-    | "metals"
-    | "commodities"
-    | "macro"
-    | "policy"
-    | "geopolitics"
-    | "prediction_market";
+  domain: TopicDomain;
+  weak?: boolean;
 }> = [
   // metals
   { keyword: "gold", domain: "metals" },
@@ -42,33 +53,33 @@ const TOPIC_KEYWORDS: Array<{
   { keyword: "copper", domain: "metals" },
   { keyword: "bullion", domain: "metals" },
   // commodities
-  { keyword: "oil", domain: "commodities" },
+  { keyword: "oil", domain: "commodities", weak: true },
   { keyword: "crude", domain: "commodities" },
   { keyword: "wti", domain: "commodities" },
   { keyword: "brent", domain: "commodities" },
   { keyword: "opec", domain: "commodities" },
   { keyword: "natural gas", domain: "commodities" },
-  { keyword: "wheat", domain: "commodities" },
-  { keyword: "corn", domain: "commodities" },
-  { keyword: "soy", domain: "commodities" },
+  { keyword: "wheat", domain: "commodities", weak: true },
+  { keyword: "corn", domain: "commodities", weak: true },
+  { keyword: "soy", domain: "commodities", weak: true },
   { keyword: "lithium", domain: "commodities" },
   // macro
-  { keyword: "fed", domain: "macro" },
+  { keyword: "fed", domain: "macro", weak: true },
   { keyword: "federal reserve", domain: "macro" },
   { keyword: "inflation", domain: "macro" },
   { keyword: "cpi", domain: "macro" },
   { keyword: "gdp", domain: "macro" },
-  { keyword: "jobs", domain: "macro" },
+  { keyword: "jobs", domain: "macro", weak: true },
   { keyword: "payroll", domain: "macro" },
   { keyword: "unemployment", domain: "macro" },
   { keyword: "recession", domain: "macro" },
   { keyword: "treasury", domain: "macro" },
-  { keyword: "yield", domain: "macro" },
-  { keyword: "bond", domain: "macro" },
+  { keyword: "yield", domain: "macro", weak: true },
+  { keyword: "bond", domain: "macro", weak: true },
   { keyword: "s&p", domain: "macro" },
   { keyword: "nasdaq", domain: "macro" },
-  { keyword: "rate", domain: "macro" },
-  { keyword: "rates", domain: "macro" },
+  { keyword: "rate", domain: "macro", weak: true },
+  { keyword: "rates", domain: "macro", weak: true },
   // policy
   { keyword: "senate", domain: "policy" },
   { keyword: "congress", domain: "policy" },
@@ -76,25 +87,51 @@ const TOPIC_KEYWORDS: Array<{
   { keyword: "tariffs", domain: "policy" },
   { keyword: "sanction", domain: "policy" },
   { keyword: "sanctions", domain: "policy" },
-  { keyword: "regulator", domain: "policy" },
-  { keyword: "sec", domain: "policy" },
+  { keyword: "regulator", domain: "policy", weak: true },
+  { keyword: "sec", domain: "policy", weak: true },
   { keyword: "cftc", domain: "policy" },
-  { keyword: "court", domain: "policy" },
-  { keyword: "ruling", domain: "policy" },
+  { keyword: "court", domain: "policy", weak: true },
+  { keyword: "ruling", domain: "policy", weak: true },
   { keyword: "biden", domain: "policy" },
-  { keyword: "trump", domain: "policy" },
+  { keyword: "trump", domain: "policy", weak: true },
   // geopolitics
   { keyword: "iran", domain: "geopolitics" },
   { keyword: "israel", domain: "geopolitics" },
   { keyword: "ukraine", domain: "geopolitics" },
   { keyword: "russia", domain: "geopolitics" },
-  { keyword: "china", domain: "geopolitics" },
+  { keyword: "china", domain: "geopolitics", weak: true },
   { keyword: "taiwan", domain: "geopolitics" },
   { keyword: "north korea", domain: "geopolitics" },
   { keyword: "gaza", domain: "geopolitics" },
   { keyword: "nato", domain: "geopolitics" },
   { keyword: "ceasefire", domain: "geopolitics" },
 ];
+
+/**
+ * Pre-built lookup tables. Built once at module load:
+ *   - `KEYWORD_REGEXES` is keyed by keyword and holds a word-boundary regex
+ *     so `"Federer"` no longer matches `"fed"` and `"snake oil"` no longer
+ *     matches an oil-prices market via the body.
+ *   - `KEYWORD_DOMAINS` maps a hit keyword back to its canonical domain.
+ *   - `WEAK_KEYWORDS` is the set of keywords that need disambiguation.
+ */
+const KEYWORD_REGEXES: ReadonlyMap<string, RegExp> = new Map(
+  TOPIC_KEYWORDS.map(({ keyword }) => [keyword, buildKeywordRegex(keyword)]),
+);
+const KEYWORD_DOMAINS: ReadonlyMap<string, TopicDomain> = new Map(
+  TOPIC_KEYWORDS.map(({ keyword, domain }) => [keyword, domain]),
+);
+const WEAK_KEYWORDS: ReadonlySet<string> = new Set(
+  TOPIC_KEYWORDS.filter((k) => k.weak).map((k) => k.keyword),
+);
+
+function buildKeywordRegex(keyword: string): RegExp {
+  // Defensively escape regex metacharacters; our current keywords have none
+  // but future additions might. `\b` works correctly across spaces, so
+  // multi-word phrases like "natural gas" and "north korea" still match.
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i");
+}
 
 /**
  * Maximum percentage-point shift a matched-ambient pool may apply to
@@ -112,22 +149,59 @@ export interface MatchedSignal {
   matchReason: string;
 }
 
-/** Find topic keywords that appear in the given lowercased text. */
+/** Find topic keywords that appear in the given text (case-insensitive,
+ *  word-boundary aware). */
 function topicHits(text: string): Set<string> {
-  const t = text.toLowerCase();
   const hits = new Set<string>();
-  for (const { keyword } of TOPIC_KEYWORDS) {
-    if (t.includes(keyword)) hits.add(keyword);
+  for (const [keyword, regex] of KEYWORD_REGEXES) {
+    if (regex.test(text)) hits.add(keyword);
   }
   return hits;
 }
 
 /**
+ * Apply the entity-disambiguation filter to the shared-keyword list. A
+ * shared keyword `K` is kept when:
+ *   - it is not weak (e.g. `gold`, `iran`, `cpi`, `tariff`), or
+ *   - the signal text contains at least one *other* topic keyword from the
+ *     same domain as `K` (e.g. `trump` is kept when the signal also
+ *     mentions `tariff`/`senate`; `fed` is kept when the signal also
+ *     mentions `rate`/`inflation`).
+ *
+ * The signal's own connector-tagged `domain` field is intentionally not
+ * used to qualify a weak keyword: that field is itself derived from the
+ * same fuzzy keyword scan upstream, so trusting it would re-introduce the
+ * exact noise we are trying to suppress (a "Trump golf" headline is
+ * tagged policy and would self-validate).
+ */
+function qualifyWeakHits(
+  sharedKeywords: string[],
+  signalHits: ReadonlySet<string>,
+): string[] {
+  return sharedKeywords.filter((k) => {
+    if (!WEAK_KEYWORDS.has(k)) return true;
+    const kwDomain = KEYWORD_DOMAINS.get(k);
+    if (!kwDomain) return false;
+    for (const other of signalHits) {
+      if (other === k) continue;
+      if (KEYWORD_DOMAINS.get(other) === kwDomain) return true;
+    }
+    return false;
+  });
+}
+
+/**
  * Find ambient signals relevant to a given market. A signal is considered
- * relevant when it shares a topic keyword with the market's question (or,
- * weaker, when its domain matches the market's domain *and* it carries any
- * topic keyword at all). Domain-only matches with no keyword overlap are
- * dropped to keep noise out of the model.
+ * relevant when it shares at least one *qualified* topic keyword with the
+ * market's question. A keyword is qualified when it is either domain-
+ * specific on its own, or it is weak/generic but co-occurs with another
+ * domain-aligned keyword in the signal text (see `qualifyWeakHits`).
+ *
+ * Headlines that hit only a single weak keyword (a Federer story matching
+ * "fed", a Trump golf-tournament story matching "trump", a basketball
+ * recap matching "court") are dropped here, which is the whole point of
+ * this filter — they were the dominant source of noise nudging modelProb
+ * away from marketProb on unrelated markets.
  */
 export function matchSignalsToMarket(
   market: Pick<ConnectorMarket, "question" | "domain">,
@@ -140,8 +214,10 @@ export function matchSignalsToMarket(
     const signalText = `${signal.title} ${signal.body}`;
     const signalHits = topicHits(signalText);
 
-    // Shared topic keywords between question and signal text.
-    const sharedKeywords = [...signalHits].filter((k) => questionHits.has(k));
+    // Shared topic keywords between question and signal text, then drop any
+    // weak hits that aren't backed up by a domain co-occurrence.
+    const rawShared = [...signalHits].filter((k) => questionHits.has(k));
+    const sharedKeywords = qualifyWeakHits(rawShared, signalHits);
     const domainMatch = market.domain === signal.domain;
 
     let matchScore = 0;
@@ -154,9 +230,10 @@ export function matchSignalsToMarket(
       matchScore = 0.4;
       matchReason = `keyword(s) ${sharedKeywords.slice(0, 3).join(", ")}`;
     } else {
-      // Domain-only matches are intentionally ignored — they generate too
-      // many spurious links (e.g. every macro headline tilting every macro
-      // market).
+      // Either no keyword overlap at all, or every overlap was a weak
+      // keyword that failed disambiguation. Domain-only matches are also
+      // intentionally ignored — they generate too many spurious links
+      // (e.g. every macro headline tilting every macro market).
       continue;
     }
 
