@@ -1,0 +1,1357 @@
+Below is the full cohesive prompt you can paste into Replit Agent.
+
+```text
+Build a local-first personal predictive intelligence terminal called Cassandra.
+
+Cassandra is NOT a SaaS platform. It is a single-user system for hunting public signals, tracking short-term anomalies, storing long-term trend memory, generating probabilistic opportunities, building trade plans, conversationally investigating ideas, tracking outcomes, and optionally automating execution with strict risk controls.
+
+OpenClaw must be the core background agent/orchestration layer responsible for signal hunting, analysis, trend surfacing, memory management, investigations, opportunity generation, paper-trading automation, and safe self-improvement proposals.
+
+Cassandra starts in paper-trading mode by default.
+
+Live execution must be disabled by default and must only become available when the user explicitly enables it, configures credentials, acknowledges risk, passes jurisdiction/platform checks, and activates hard risk limits.
+
+Cassandra must never promise profits or certainty.
+
+==================================================
+PRODUCT IDENTITY
+==================================================
+
+Name:
+Cassandra
+
+Positioning:
+A personal predictive intelligence terminal for monitoring prediction markets, geopolitics, policy, commodities, logistics, macro stress, narrative shifts, historical parallels, and public anomaly signals.
+
+Core principles:
+- Local-first
+- Single user
+- Fast
+- Dark-mode intelligence terminal aesthetic
+- Probabilistic, never certain
+- Explainable
+- Auditable
+- Memory-driven
+- Agent-driven
+- Modular connectors
+- Paper-trading first
+- Automation gated by risk controls
+- Human override always available
+
+==================================================
+PRIMARY OBJECTIVE
+==================================================
+
+Cassandra should:
+- Continuously hunt public signals
+- Detect anomalies and trend shifts
+- Track prediction market opportunities
+- Track high-performing Polymarket accounts/wallets
+- Compare current events to historical parallels
+- Generate opportunity reports
+- Generate structured trade plans
+- Track paper-trading and live-trading outcomes
+- Learn which signals actually mattered
+- Maintain short-term and long-term memory
+- Allow the user to chat with the agent and ask it to investigate topics
+- Support one-click paper trades
+- Support one-click mirror trades
+- Support queued approval execution
+- Support optional live autopilot mode with strict controls
+
+==================================================
+VISUAL STYLE / UI
+==================================================
+
+Design aesthetic:
+- Sleek, modern, dark-mode intelligence terminal
+- Dark navy / charcoal base
+- Electric blue, amber, silver, and muted red accents
+- Glassmorphism cards
+- Clean typography
+- Sharp, high-end command center feel
+- Dense information, but readable
+- Animated signal pulses
+- Risk heatmaps
+- Sparkline charts
+- Radar-style opportunity visualizations
+- Subtle motion
+- Premium feel
+- Desktop-first, but responsive
+
+==================================================
+CORE UI PAGES
+==================================================
+
+1. Dashboard
+
+Show:
+- Top opportunities
+- Active paper trades
+- Active live/autopilot trades if enabled
+- P&L summary
+- Signal feed
+- Risk alerts
+- Trend velocity panel
+- Random Prediction button
+- Top 10 Predictions board
+- OpenClaw agent status
+- Connector health summary
+- Daily intelligence summary
+
+2. Top 10 Predictions Board
+
+Show Cassandra’s top 10 current predictions ranked by:
+- Opportunity score
+- Confidence
+- Risk-adjusted return
+- Source strength
+- Historical parallel strength
+- Time sensitivity
+- Liquidity quality
+
+Each row should show:
+- Rank
+- Prediction title
+- Market/event
+- Suggested side: YES / NO / WATCH / HUMAN REVIEW
+- Confidence
+- Risk
+- Entry zone
+- Exit target
+- Cash-out target
+- Key reason
+- Historical parallel
+- Status
+
+3. Random Prediction
+
+Add a “Random Prediction” button.
+
+It should surface one interesting prediction from the opportunity database using weighted randomness based on:
+- Novelty
+- Signal strength
+- Historical similarity
+- Unusual anomaly score
+- User has not recently viewed it
+- Non-zero opportunity score
+
+The random prediction view should show:
+- Prediction
+- Reasoning Summary
+- Key sources
+- Historical parallel
+- Suggested action
+- Risk warning
+
+4. Opportunity Detail
+
+Show:
+- Prediction summary
+- Suggested side
+- Confidence score
+- Risk score
+- Opportunity score
+- Reasoning Summary
+- Supporting evidence
+- Conflicting evidence
+- Sources
+- Historical parallels
+- Similar past events and outcomes
+- Entry plan
+- Price/probability targets
+- Cash-out ladder
+- Exit strategy
+- Thesis invalidation triggers
+- Liquidity/spread warning
+- One-click paper trade button
+- One-click mirror button when applicable
+- Queue for approval button
+- “Why Cassandra flagged this”
+- “Why Cassandra might be wrong”
+
+5. Trends View
+
+Show:
+- Active narratives
+- Trend strength
+- Trend velocity
+- Trend decay
+- Linked entities
+- Linked commodities
+- Linked policies
+- Linked prediction markets
+- Related signals
+- Historical recurrence
+- Outcome history
+
+6. Metals / COMEX View
+
+Track:
+- COMEX gold inventory
+- COMEX silver inventory
+- COMEX copper inventory
+- Platinum inventory where available
+- Palladium inventory where available
+- Registered inventory
+- Eligible inventory
+- Registered vs eligible ratio
+- Vault inventory changes
+- Warehouse stock movements
+- Delivery notices
+- Open interest vs registered inventory
+- Paper-to-physical ratio
+- Physical premium indicators
+- Stress alerts
+
+Generate alerts for:
+- Rapid registered inventory drawdown
+- Rising open interest while registered inventory falls
+- Delivery stress
+- Physical premium widening
+- Futures price weakness while physical tightness rises
+- Paper/physical disconnect
+
+7. Signal Feed
+
+Show:
+- Raw signals
+- Normalized signals
+- Source
+- Timestamp
+- Category
+- Confidence
+- Entities
+- Related markets
+- Related trends
+- Data quality score
+- Reliability score
+
+8. Winner Accounts
+
+Track high-performing Polymarket accounts/wallets.
+
+Show:
+- Top tracked accounts
+- Account performance
+- Win rate
+- Profit factor
+- Resolved market count
+- Open positions
+- Recent bets
+- Category specialization
+- Copyability score
+- Risk score
+- Liquidity impact
+- Mirror candidates
+- Risk flags
+
+Risk flags:
+- Too few resolved trades
+- Concentrated wins
+- Illiquid markets
+- Possible lucky streak
+- Late entries only
+- Large unexplained bets
+- High variance
+- Cannot safely mirror due to liquidity/spread
+
+9. Agent Chat
+
+A conversational interface where the user can ask Cassandra to investigate.
+
+Example queries:
+- “Investigate copper shortages and prediction market opportunities.”
+- “Why is this market ranked #2?”
+- “Find historical parallels to this tariff escalation.”
+- “What are the strongest black-swan signals right now?”
+- “Check whether COMEX silver inventory stress is worsening.”
+- “Find Polymarket accounts that have been early and right on geopolitical markets.”
+- “Explain why Cassandra skipped this opportunity.”
+- “Run a backtest on this signal blend.”
+
+The agent should respond with:
+- Summary
+- Sources
+- Evidence
+- Historical parallels
+- Confidence
+- Uncertainty
+- Suggested next steps
+- Watchlist items
+- Opportunity candidates
+- Trade plan if appropriate
+
+10. OpenClaw Command Center
+
+Show:
+- Current OpenClaw status
+- Running jobs
+- Recent findings
+- Failed jobs
+- Connector health
+- Agent memory status
+- Short-term memory usage
+- Long-term memory updates
+- Pending upgrade proposals
+- Pending approval items
+- Last successful scan
+- Last daily brief
+
+11. Autopilot Control Center
+
+Show:
+- Autopilot mode: OFF / PAPER / APPROVAL QUEUE / LIVE
+- Kill switch
+- Risk budget
+- Current exposure
+- Open autopilot positions
+- Queued trades
+- Winner-account mirror candidates
+- Recent autopilot decisions
+- Autopilot audit log
+- “Why did Cassandra take this trade?”
+- “Why did Cassandra skip this trade?”
+
+12. Backtesting / Performance
+
+Show:
+- Strategy performance
+- Signal effectiveness
+- Win rate
+- Average return
+- Drawdown
+- False positives
+- Missed opportunities
+- Calibration of confidence vs actual outcomes
+- Thesis performance
+- Signal decay
+- Model/scoring version comparisons
+
+13. Prediction Journal
+
+Every opportunity should create a journal record:
+- Prediction
+- Rationale
+- Sources
+- Historical parallels
+- Entry plan
+- Exit plan
+- Confidence
+- Outcome
+- What was right
+- What was wrong
+- Which signals helped
+- Which signals were noise
+- Lessons learned
+
+==================================================
+SIGNAL CATEGORIES
+==================================================
+
+1. Prediction Market Signals
+
+Track:
+- Large bets on unlikely outcomes
+- Hyper-specific bets
+- Wallet/account track record
+- Sudden position changes
+- Clustered account behavior
+- Liquidity
+- Spread
+- Volume
+- Open interest
+- Implied probability changes
+- Market category
+- Resolution date
+- Time-to-resolution
+- Price movement
+- Market maker/liquidity behavior
+
+2. Polymarket Winner Account Signals
+
+Track public accounts/wallets that appear to have strong historical prediction performance.
+
+For each tracked account, calculate:
+- Total resolved markets participated in
+- Win rate
+- Average return
+- Median return
+- Profit factor
+- Maximum drawdown
+- Average position size
+- Largest position size
+- Market categories traded
+- Time between entry and resolution
+- Early-entry vs late-entry tendency
+- Whether wins are concentrated in one category
+- Whether performance appears durable or lucky
+- Copyability score
+- Risk score
+- Liquidity impact score
+- Recent position changes
+- Current open positions
+- Mirror trade candidates
+
+3. Social Signals
+
+Track:
+- X/Twitter narratives
+- Influencer clustering
+- Narrative velocity
+- Repost acceleration
+- Attention impulse score
+- Bot/spam filtering
+- 4chan /pol optional connector
+- Reddit optional connector
+- News/RSS feeds
+- Narrative crowding risk
+- Sentiment changes
+- Topic clustering
+- Sudden consensus shifts
+
+4. Legislative and Policy Signals
+
+Track:
+- Export controls
+- Tariffs
+- Sanctions
+- Trade restrictions
+- Customs actions
+- Proposed bills
+- Congressional hearings
+- White House statements
+- Treasury statements
+- Commerce/BIS actions
+- USTR actions
+- Federal Register updates
+- Central bank rhetoric
+- Defense official rhetoric
+- Foreign government policy statements
+- Enforcement actions
+- Regulatory rulemaking
+
+5. Commodity Fundamentals
+
+Track:
+- Supply/demand balances
+- Inventories
+- Stockpiles
+- Production disruptions
+- Refinery disruptions
+- Mine disruptions
+- Shipping disruptions
+- Chokepoints
+- Futures curves
+- Contango/backwardation
+- Basis
+- Spreads
+- Open interest
+- Volume
+- Physical premiums
+- Warehouse withdrawals
+- Settlement anomalies
+- Paper vs physical disconnects
+
+6. COMEX and Metals Vault Signals
+
+Track metals:
+- Gold
+- Silver
+- Copper
+- Platinum
+- Palladium
+
+Signals:
+- Registered inventory
+- Eligible inventory
+- Registered/eligible ratio
+- Daily vault changes
+- Warehouse inflows
+- Warehouse outflows
+- Delivery notices
+- Open interest vs registered inventory
+- Paper claims vs deliverable physical
+- Physical premium divergence
+- Lease rates where available
+- ETF metal holdings where available
+- Exchange-for-physical activity where available
+- Stress score for each metal
+
+7. Weather and Climate Disruption Signals
+
+Track:
+- Hurricanes
+- Typhoons
+- Floods
+- Droughts
+- Freezes
+- Heat waves
+- Wildfires
+- Crop-impacting weather
+- Energy-demand weather
+- Port disruptions
+- Refinery disruptions
+- Pipeline disruptions
+- Mining disruptions
+- Rail disruptions
+- Agricultural yield risk
+
+8. Flight and Air-Traffic Signals
+
+Use only public/legal aviation data.
+
+Track:
+- Airspace closures
+- Cargo flight surges
+- Military flight anomalies where legally available
+- Government/VIP aircraft movements where legally available
+- Rerouting around conflict zones
+- Airport disruptions
+- Sudden flight cancellations
+- Unusual logistics movements
+
+9. Shipping and Maritime Signals
+
+Use public/legal AIS or maritime data.
+
+Track:
+- Tanker movements
+- LNG flows
+- Oil flows
+- Grain flows
+- Fertilizer flows
+- Metals shipments
+- Port congestion
+- Anchorage buildup
+- Delayed arrivals
+- Rerouting
+- Dark-fleet / AIS-gap risk signals, marked as uncertain
+- Chokepoint risk:
+  - Strait of Hormuz
+  - Red Sea
+  - Suez Canal
+  - Panama Canal
+  - Taiwan Strait
+  - Black Sea
+  - South China Sea
+
+10. Conflict and Instability Signals
+
+Track:
+- Military escalation
+- Border incidents
+- Coups
+- Protests
+- Riots
+- Strikes
+- Embassy alerts
+- Travel advisories
+- Defense ministry statements
+- Diplomatic breakdowns
+- Regional conflict heatmaps
+- Sanctions escalation
+- Cyber escalation
+- Military procurement announcements
+
+11. Financial Macro Signals
+
+Track:
+- DXY
+- Treasury yields
+- Yield curve
+- Credit spreads
+- Repo/funding stress
+- Central bank liquidity
+- Dollar liquidity
+- Gold/silver ratio
+- Oil volatility
+- VIX
+- MOVE index
+- Options skew
+- ETF flows
+- Sovereign debt stress
+- Bank stress signals
+- Inflation expectations
+- Real rates
+- Liquidity indices
+
+12. Corporate and Legal Signals
+
+Track:
+- SEC filings
+- Insider/public executive sales filings
+- Earnings guidance
+- Legal/regulatory case outcomes
+- Defense procurement
+- Government contract awards
+- Cyber incident disclosures
+- Supply chain disclosures
+- App traffic/search trend signals
+- Domain registrations
+- GitHub/project activity for key technologies
+
+13. Black-Swan / Cross-Domain Anomaly Signals
+
+Detect cross-domain convergence:
+- Abnormal shipping + abnormal policy rhetoric + abnormal prediction-market bets
+- COMEX inventory stress + physical premium widening + X narrative acceleration
+- Weather disruption + commodity spread movement + transport disruption
+- Flight rerouting + conflict chatter + energy market movement
+- Policy escalation + unusual wallet behavior + social narrative velocity
+- Macro funding stress + bank rumors + prediction-market movement
+
+Black-swan alerts should default to WATCH or HUMAN REVIEW, not automatic trade recommendations.
+
+==================================================
+REASONING / EXPLANATION
+==================================================
+
+Do not expose hidden chain-of-thought.
+
+Instead, every prediction must include a user-facing “Reasoning Summary” with:
+- Plain-English rationale
+- Key signals considered
+- Signal weights
+- Supporting evidence
+- Conflicting evidence
+- Sources
+- Historical parallels
+- Similar past patterns
+- What happened in those past cases
+- Confidence score
+- Risk score
+- Data quality score
+- What would invalidate the prediction
+- What data is missing
+- Why Cassandra recommends WATCH / PAPER TRADE / HUMAN REVIEW / APPROVAL / AUTOPILOT
+
+Historical parallels:
+For each opportunity, search long-term memory for similar past patterns.
+
+Show:
+- Similar event
+- Date range
+- Signal similarities
+- Outcome
+- What was different
+- Relevance score
+- Confidence in the parallel
+
+Every prediction must clearly separate:
+- Observed facts
+- Inferences
+- Speculation
+- Unknowns
+
+==================================================
+TRADE PLAN OUTPUT
+==================================================
+
+For each opportunity, generate:
+
+Entry:
+- Entry condition
+- Entry price/probability range
+- Step-by-step entry plan
+- Liquidity/spread warning
+- “Do not enter above” threshold
+
+Position:
+- Suggested paper position size
+- Risk-adjusted sizing explanation
+- Maximum allowed exposure
+
+Risk:
+- Stop loss
+- Max downside estimate
+- Invalidation triggers
+- Risk/reward estimate
+
+Profit:
+- Take-profit target
+- Partial cash-out target
+- Profit sweep trigger
+- Suggested cash-out ladder
+
+Exit:
+- Full exit target
+- Trailing exit option
+- Time-based exit
+- Thesis invalidation exit
+- Liquidity deterioration exit
+- Emergency exit rule
+
+Never claim certainty. All recommendations must be probabilistic.
+
+==================================================
+PAPER TRADING
+==================================================
+
+Track:
+- Open positions
+- Entry price
+- Current price/probability
+- Realized P&L
+- Unrealized P&L
+- Swept profits
+- Max drawdown
+- Win rate
+- Average return
+- Missed opportunities
+- False positives
+
+Include:
+- Profit sweep mechanism
+- Paper trade history
+- Performance dashboard
+- Prediction journal
+- Paper autopilot mode
+
+==================================================
+ONE-CLICK FUNCTIONS
+==================================================
+
+Add:
+- One-click paper trade
+- One-click mirror trade
+- One-click approve queued trade
+- One-click cash out
+- One-click disable autopilot
+- One-click kill switch
+
+One-click mirror workflow:
+1. Show tracked account position.
+2. Show original account entry price.
+3. Show current market price/probability.
+4. Show spread and liquidity.
+5. Show Cassandra independent score.
+6. Show risk warnings.
+7. Generate suggested position size.
+8. Generate stop loss, take profit, and cash-out ladder.
+9. Require confirmation.
+10. Place simulated paper trade unless live mode is explicitly enabled.
+
+Do not mirror blindly. Always compare:
+- Original account entry price vs current price
+- Liquidity
+- Slippage
+- Time remaining
+- Cassandra opportunity score
+- User risk settings
+
+==================================================
+AUTOPILOT EXECUTION MODE
+==================================================
+
+Add optional Autopilot Execution Mode.
+
+Default:
+- Disabled
+- Paper mode only
+
+Autopilot goal:
+Seek positive expected value opportunities while enforcing strict risk limits, platform rules, jurisdiction restrictions, liquidity checks, and audit logging.
+
+Autopilot must not promise profit.
+
+Autopilot modes:
+1. OFF
+2. Paper Autopilot
+   - Fully automated paper trading
+   - Executes simulated trades
+   - Tracks results
+
+3. Approval Autopilot
+   - Finds opportunities
+   - Builds trade plan
+   - Queues trade for one-click approval
+
+4. Live Autopilot
+   - Disabled by default
+   - Requires explicit user activation
+   - Requires API credentials
+   - Requires jurisdiction eligibility check
+   - Requires accepted risk disclosure
+   - Requires active kill switch
+   - Requires configured max-loss limits
+
+Live Autopilot risk gates:
+- Max position size
+- Max daily loss
+- Max weekly loss
+- Max total exposure
+- Max exposure per market
+- Max exposure per theme
+- Max exposure per commodity
+- Max exposure per tracked account
+- Minimum liquidity
+- Maximum spread
+- Minimum confidence
+- Minimum source reliability
+- Minimum historical-parallel strength
+- Maximum slippage
+- Stop loss
+- Take profit
+- Profit sweep
+- Time-based exit
+- Thesis-invalidation exit
+- Kill switch
+
+Autopilot decision flow:
+1. Detect opportunity.
+2. Confirm market is eligible.
+3. Check jurisdiction/platform restrictions.
+4. Check liquidity and spread.
+5. Check user risk settings.
+6. Compare against Cassandra score.
+7. Compare against tracked winner-account behavior.
+8. Generate trade plan.
+9. Execute paper trade, queue approval, or live execute depending on mode.
+10. Monitor position.
+11. Exit according to stop loss, take profit, sweep, time decay, or invalidation trigger.
+12. Log everything.
+
+Mirror logic:
+Autopilot may mirror a winner account only if:
+- Account has enough resolved history
+- Copyability score exceeds threshold
+- Current price is not materially worse than tracked account entry
+- Market liquidity is sufficient
+- Spread is acceptable
+- Cassandra independent score agrees
+- User exposure limits allow it
+- Market is not restricted
+- Kill switch is off
+
+==================================================
+MEMORY ARCHITECTURE
+==================================================
+
+Use two memory layers.
+
+1. Short-Term Operational Memory
+
+Purpose:
+Fast working memory for OpenClaw during active investigations.
+
+Retention:
+7 to 30 days.
+
+Stores:
+- Recent signals
+- Active anomalies
+- Active narratives
+- Current opportunity candidates
+- Recent agent observations
+- Recent market moves
+- Connector health
+- Temporary scoring context
+- Investigation notes
+- Active chat context
+- Pending agent tasks
+
+Tables:
+- short_term_signal
+- short_term_observation
+- short_term_narrative
+- short_term_market_context
+- short_term_agent_context
+- short_term_anomaly
+- short_term_opportunity_candidate
+- short_term_connector_status
+- short_term_investigation
+- short_term_agent_task
+- short_term_chat_context
+
+2. Long-Term Trend Memory
+
+Purpose:
+Durable historical memory for trend tracking, prediction journaling, backtesting, and historical parallels.
+
+Retention:
+Indefinite.
+
+Tables:
+- trend
+- trend_entity
+- trend_signal_link
+- trend_market_link
+- trend_outcome
+- opportunity
+- opportunity_score_snapshot
+- trade_plan
+- paper_trade
+- paper_trade_outcome
+- live_trade
+- live_trade_outcome
+- prediction_journal
+- signal_effectiveness
+- source_reliability
+- entity_profile
+- narrative_cluster
+- historical_pattern
+- historical_parallel
+- thesis_profile
+- thesis_performance
+- scoring_model_version
+- agent_skill
+- agent_skill_test
+- agent_upgrade_proposal
+- admin_approval
+- audit_log
+- comex_inventory_snapshot
+- vault_inventory_change
+- metal_stress_score
+- paper_physical_disconnect
+- tracked_polymarket_account
+- account_performance_snapshot
+- account_open_position
+- account_resolved_trade
+- copyability_score
+- mirror_trade_candidate
+- mirror_trade_decision
+- autopilot_config
+- autopilot_run
+- autopilot_decision
+- autopilot_trade
+- autopilot_exit
+- autopilot_risk_check
+- autopilot_audit_log
+- execution_credential
+- jurisdiction_check
+- kill_switch_event
+
+==================================================
+OPENCLAW AGENT ARCHITECTURE
+==================================================
+
+OpenClaw is the core orchestration layer.
+
+OpenClaw must handle:
+- Scheduled signal hunting
+- On-demand conversational investigations
+- Connector orchestration
+- Signal normalization
+- Signal scoring
+- Trend clustering
+- Anomaly detection
+- Short-term memory management
+- Long-term memory promotion
+- Historical parallel search
+- Opportunity generation
+- Trade plan generation
+- Paper autopilot
+- Approval autopilot
+- Live autopilot decisioning only when enabled
+- Connector health monitoring
+- Data quality monitoring
+- Audit logging
+- Self-improvement proposals
+
+OpenClaw should have separate agent roles:
+
+1. Signal Hunter Agent
+- Scans connectors
+- Pulls recent data
+- Finds anomalies
+- Writes to short-term memory
+
+2. Market Analyst Agent
+- Evaluates prediction markets
+- Tracks probability changes
+- Scores market opportunity
+
+3. Winner Account Analyst Agent
+- Tracks Polymarket accounts/wallets
+- Calculates account performance
+- Identifies mirror candidates
+
+4. Policy Analyst Agent
+- Monitors tariffs, export controls, sanctions, bills, and regulatory actions
+
+5. Commodity Analyst Agent
+- Tracks commodities, futures curves, inventories, and paper/physical disconnects
+
+6. Metals / COMEX Analyst Agent
+- Tracks COMEX and vault inventory data
+- Calculates metals stress scores
+
+7. Logistics Analyst Agent
+- Tracks shipping, AIS, ports, chokepoints, flights, and weather disruptions
+
+8. Conflict Analyst Agent
+- Tracks geopolitical instability and conflict signals
+
+9. Macro Analyst Agent
+- Tracks yields, DXY, funding stress, volatility, and liquidity conditions
+
+10. Trend Memory Agent
+- Clusters signals into trends
+- Maintains long-term trend memory
+- Finds historical parallels
+
+11. Opportunity Agent
+- Creates opportunity reports
+- Generates Reasoning Summaries
+- Generates trade plans
+
+12. Risk Manager Agent
+- Enforces risk limits
+- Blocks low-quality or overexposed trades
+- Generates “why not trade” explanations
+
+13. Autopilot Agent
+- Runs paper/approval/live autopilot depending on mode
+- Must obey all risk gates
+- Must never bypass kill switch
+
+14. Systems Health Agent
+- Monitors connector health
+- Detects stale data
+- Reports failed jobs
+- Creates maintenance alerts
+
+15. Self-Improvement Agent
+- Proposes safe improvements
+- Runs backtests
+- Creates upgrade proposals
+- Never modifies production behavior without approval
+
+==================================================
+OPENCLAW JOB TYPES
+==================================================
+
+Implement scheduled and on-demand jobs:
+
+Scheduled jobs:
+- scan_prediction_markets
+- scan_winner_accounts
+- scan_social_signals
+- scan_policy_signals
+- scan_commodity_signals
+- scan_comex_inventory
+- scan_weather_disruptions
+- scan_shipping_patterns
+- scan_flight_patterns
+- scan_conflict_signals
+- scan_macro_signals
+- update_trend_memory
+- generate_top_10_predictions
+- run_paper_autopilot
+- monitor_open_positions
+- generate_daily_brief
+- check_connector_health
+- run_backtests
+- detect_model_drift
+
+On-demand jobs:
+- investigate_topic
+- explain_prediction
+- find_historical_parallels
+- evaluate_market
+- evaluate_winner_account
+- create_trade_plan
+- mirror_account_position
+- run_strategy_backtest
+- generate_upgrade_proposal
+
+==================================================
+SAFE SELF-IMPROVEMENT
+==================================================
+
+The OpenClaw agent may improve itself only through safe skills.
+
+Allowed:
+- Propose new signal weights
+- Propose new thesis profiles
+- Propose new anomaly rules
+- Propose new connector mappings
+- Propose new scoring functions
+- Propose new prompt templates
+- Run backtests
+- Run paper-trading simulations
+- Compare proposed changes against historical outcomes
+- Create upgrade proposals
+
+Not allowed:
+- Modify production scoring automatically
+- Enable live trading automatically
+- Execute real trades unless live mode is explicitly enabled and all checks pass
+- Change risk limits automatically
+- Disable guardrails
+- Delete audit logs
+- Bypass compliance checks
+- Self-modify production code without approval
+
+Upgrade workflow:
+1. Agent detects improvement opportunity.
+2. Agent creates upgrade proposal.
+3. Agent runs backtest.
+4. Agent runs paper simulation.
+5. Agent summarizes benefit/risk.
+6. User approves or rejects.
+7. Approved upgrade is versioned.
+8. All changes are logged.
+
+==================================================
+SCORING PIPELINE
+==================================================
+
+Implement modular functions:
+
+- ingest_signals()
+- normalize_signals()
+- deduplicate_signals()
+- validate_signal_quality()
+- detect_anomalies()
+- score_prediction_market_activity()
+- score_wallet_track_record()
+- calculate_account_win_rate()
+- calculate_account_profit_factor()
+- calculate_copyability_score()
+- detect_winner_account_position_change()
+- generate_mirror_trade_candidate()
+- evaluate_mirror_trade_risk()
+- score_social_velocity()
+- score_policy_signal()
+- score_tariff_export_control_impact()
+- score_commodity_fundamentals()
+- score_comex_inventory_stress()
+- score_vault_inventory_change()
+- score_paper_vs_physical_disconnect()
+- score_weather_disruption()
+- score_flight_pattern_anomaly()
+- score_shipping_pattern_anomaly()
+- score_conflict_instability()
+- score_macro_financial_stress()
+- detect_cross_domain_anomaly()
+- compare_to_historical_patterns()
+- generate_historical_parallels()
+- calculate_opportunity_score()
+- generate_reasoning_summary()
+- generate_trade_plan()
+- generate_cash_out_ladder()
+- generate_exit_strategy()
+- update_prediction_journal()
+- run_autopilot()
+- scan_for_executable_opportunities()
+- evaluate_market_eligibility()
+- check_jurisdiction_restrictions()
+- check_autopilot_risk_limits()
+- calculate_autopilot_position_size()
+- execute_paper_trade()
+- queue_trade_for_approval()
+- execute_live_trade_if_enabled()
+- monitor_autopilot_positions()
+- trigger_stop_loss()
+- trigger_take_profit()
+- trigger_profit_sweep()
+- trigger_thesis_invalidation_exit()
+- trigger_time_based_exit()
+- log_autopilot_decision()
+
+==================================================
+CONNECTORS
+==================================================
+
+Use mock connectors first. Build clean interfaces so real APIs can be added later.
+
+Connectors:
+- Prediction market data
+- Prediction market wallet/account activity
+- Polymarket market data
+- Polymarket account/wallet tracking
+- X/Twitter
+- 4chan /pol optional
+- Reddit optional
+- News/RSS
+- Federal Register
+- USTR
+- Commerce/BIS export controls
+- Treasury sanctions
+- Congressional bills
+- Commodity data
+- Futures curves
+- Physical premiums
+- COMEX inventory
+- Metals vault inventories
+- Weather
+- AIS/shipping
+- Aviation/ADS-B
+- Conflict event data
+- SEC filings
+- Treasury yields
+- DXY/macro data
+- Options/volatility data
+- ETF flows
+- Central bank releases
+- Cyber incident disclosures
+
+Each connector should implement:
+- fetch()
+- normalize()
+- health_check()
+- last_successful_run
+- rate_limit_handling
+- error_logging
+- mock_data_mode
+
+==================================================
+RISK CONTROLS
+==================================================
+
+Include:
+- Watch-only mode
+- Kill switch
+- Max paper position size
+- Max live position size
+- Max daily paper loss
+- Max daily live loss
+- Max weekly loss
+- Max total exposure
+- Max exposure per market
+- Max exposure per thesis
+- Max exposure per commodity
+- Max exposure per event category
+- Max exposure per tracked account
+- Stop loss
+- Stop gain
+- Profit sweep percentage
+- Minimum confidence threshold
+- Minimum liquidity threshold
+- Maximum spread
+- Maximum slippage
+- Correlation/exposure warnings
+- Data quality warning
+- “Why not trade?” explanation for rejected opportunities
+
+==================================================
+COMPLIANCE / EXECUTION SAFETY
+==================================================
+
+Cassandra must:
+- Start in paper mode
+- Keep live execution disabled by default
+- Require explicit user activation for live execution
+- Require API credentials for live execution
+- Require risk acknowledgement
+- Require jurisdiction/platform eligibility check
+- Never bypass geoblocks, platform restrictions, KYC, sanctions, or terms of service
+- Maintain audit logs
+- Never claim guaranteed profits
+- Never knowingly use non-public material information
+- Treat all outputs as probabilistic
+
+==================================================
+TECH STACK
+==================================================
+
+Use:
+- Frontend: Next.js + TypeScript + Tailwind
+- Backend: FastAPI or Node/Express
+- Database: SQLite for simple local MVP, with Postgres-compatible schema preferred
+- Background jobs: scheduler for OpenClaw agent
+- Local environment variables
+- Local encrypted secrets where possible
+- Modular connector architecture
+- Unit tests for scoring, risk, memory, and autopilot logic
+
+==================================================
+REUSABLE UI COMPONENTS
+==================================================
+
+Create:
+- OpportunityCard
+- Top10PredictionTable
+- RandomPredictionButton
+- SignalPulseFeed
+- RiskHeatmap
+- ThesisRadar
+- MarketSparkline
+- PolicyImpactBadge
+- CommodityDisconnectCard
+- COMEXStressCard
+- WalletWhaleAlert
+- WinnerAccountLeaderboard
+- AccountPerformanceCard
+- CopyabilityScoreBadge
+- MirrorTradeButton
+- MirrorTradePreviewModal
+- AutopilotControlPanel
+- ApprovalQueue
+- RiskGateBanner
+- KillSwitchControl
+- OpportunityReasoningPanel
+- EvidenceWeightBreakdown
+- ConflictingSignalsPanel
+- HistoricalParallelsPanel
+- TradePlanCard
+- EntryStepsTimeline
+- PriceTargetLadder
+- ExitStrategyBuilder
+- CashOutTargetPanel
+- ThesisInvalidationChecklist
+- AgentChatWindow
+- OpenClawStatusPanel
+- ConnectorHealthTable
+- AgentAuditLogTable
+- UpgradeProposalCard
+
+==================================================
+SEED / MOCK DATA
+==================================================
+
+Include realistic mock data for:
+- Suspicious high-conviction prediction-market account
+- Winner account with strong historical performance
+- Mirror trade candidate
+- Tariff escalation signal
+- Export-control announcement
+- Commodity inventory drawdown
+- COMEX silver registered inventory decline
+- Futures/physical premium divergence
+- Viral X narrative cluster
+- 4chan /pol chatter anomaly
+- Shipping chokepoint disruption
+- Flight rerouting anomaly
+- Conflict escalation signal
+- Macro funding stress signal
+- Prediction market opportunity
+- Simulated paper trade
+- Autopilot decision
+- Historical parallel
+- Prediction journal outcome
+
+==================================================
+DELIVERABLES
+==================================================
+
+Build:
+- Working local app
+- Dark-mode UI
+- Dashboard
+- Top 10 board
+- Random Prediction button
+- Agent Chat investigation interface
+- OpenClaw Command Center
+- Opportunity detail page
+- Trends page
+- Winner Accounts page
+- COMEX/metals page
+- Autopilot Control Center
+- Backtesting/performance page
+- Paper trading system
+- One-click paper trade
+- One-click mirror trade
+- Approval queue
+- Short-term memory database
+- Long-term trend memory database
+- Mock connectors
+- Seed/mock data
+- README
+- .env.example
+- Unit tests for scoring and risk logic
+
+Build Cassandra now.
+```
