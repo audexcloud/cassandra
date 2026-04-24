@@ -130,6 +130,29 @@ export default function Agent() {
       const decoder = new TextDecoder();
       let doneReading = false;
       let fullText = "";
+      // Rolling buffer: SSE frames can be split across network chunks.
+      // We only consume up to the last newline boundary and keep the rest
+      // for the next iteration so partial `data: {...}` JSON is never
+      // parsed mid-frame.
+      let buffer = "";
+
+      const consumeLine = (line: string) => {
+        if (!line.startsWith("data: ")) return;
+        const dataStr = line.slice(6).trim();
+        if (!dataStr) return;
+        try {
+          const data = JSON.parse(dataStr);
+          if (data.content) {
+            fullText += data.content;
+            setStreamedContent(fullText);
+          }
+          if (data.done) {
+            doneReading = true;
+          }
+        } catch {
+          // Server emits keep-alive frames we can safely ignore.
+        }
+      };
 
       while (!doneReading) {
         const { value, done } = await reader.read();
@@ -137,30 +160,17 @@ export default function Agent() {
           doneReading = true;
           break;
         }
-
-        const chunk = decoder.decode(value, { stream: true });
-        const lines = chunk.split("\n");
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const dataStr = line.slice(6).trim();
-            if (!dataStr) continue;
-
-            try {
-              const data = JSON.parse(dataStr);
-              if (data.content) {
-                fullText += data.content;
-                setStreamedContent(fullText);
-              }
-              if (data.done) {
-                doneReading = true;
-              }
-            } catch {
-              // Server emits keep-alive frames we can safely ignore.
-            }
-          }
+        buffer += decoder.decode(value, { stream: true });
+        let nl = buffer.indexOf("\n");
+        while (nl !== -1) {
+          const line = buffer.slice(0, nl);
+          buffer = buffer.slice(nl + 1);
+          consumeLine(line);
+          nl = buffer.indexOf("\n");
         }
       }
+      // Flush any trailing partial-but-complete frame on close.
+      if (buffer.length > 0) consumeLine(buffer);
     } catch (err) {
       console.error("Stream failed:", err);
     } finally {
