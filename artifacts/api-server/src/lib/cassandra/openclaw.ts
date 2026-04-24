@@ -15,6 +15,7 @@ import {
   riskConfig,
   auditLog,
   connectorStatus,
+  observations,
 } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 
@@ -36,6 +37,20 @@ import {
 } from "./backtest";
 import { refreshWinnerWallets } from "./winnerWallets";
 import { tuneAmbientShiftCaps } from "./signalCapTuning";
+import {
+  getDomainCalibrationFactors,
+  calibratedConfidence,
+  invalidateCalibrationCache,
+} from "./calibration";
+import {
+  runInvestigateTopic,
+  runExplainPrediction,
+  runFindHistoricalParallels,
+  runEvaluateMarket,
+  runCreateTradePlan,
+} from "./onDemandJobs";
+import { buildAgentContext, renderAgentContext } from "./agent";
+import { anthropic } from "@workspace/integrations-anthropic-ai";
 import { logger } from "../logger";
 
 const CYCLE_INTERVAL_SEC = 60;
@@ -167,6 +182,7 @@ async function ingestConnector(
   result: ConnectorResult,
   ambientPool: ConnectorSignal[],
   maxKelly: number,
+  calibrationFactors: Map<string, number>,
 ): Promise<{
   upserted: number;
   signalsInserted: number;
@@ -201,10 +217,15 @@ async function ingestConnector(
       domain: market.domain,
     });
 
+    const adjustedConfidence = calibratedConfidence(
+      market.confidence,
+      market.domain,
+      calibrationFactors,
+    );
     const inputs = {
       marketProb: market.marketProb,
       modelProb,
-      confidence: market.confidence,
+      confidence: adjustedConfidence,
       liquidity: market.liquidity,
     };
     const score = edgeScore(inputs);
@@ -248,7 +269,7 @@ async function ingestConnector(
         modelProb,
         edge: modelProb - market.marketProb,
         edgeScore: score,
-        confidence: market.confidence,
+        confidence: adjustedConfidence,
         liquidity: market.liquidity,
         spread: market.spread,
         kellyFraction: kelly,
@@ -263,7 +284,7 @@ async function ingestConnector(
           modelProb,
           edge: modelProb - market.marketProb,
           edgeScore: score,
-          confidence: market.confidence,
+          confidence: adjustedConfidence,
           liquidity: market.liquidity,
           spread: market.spread,
           kellyFraction: kelly,
@@ -285,7 +306,7 @@ async function ingestConnector(
       marketProb: market.marketProb,
       modelProb,
       edgeScore: score,
-      confidence: market.confidence,
+      confidence: adjustedConfidence,
     });
 
     if (market.signals.length > 0) {
@@ -368,7 +389,10 @@ async function runCycleInner(): Promise<void> {
   let totalSignals = 0;
 
   try {
-    const maxKelly = await getMaxKelly();
+    const [maxKelly, calibrationFactors] = await Promise.all([
+      getMaxKelly(),
+      getDomainCalibrationFactors(),
+    ]);
 
     // ----- Phase 1: fetch every connector and collect all ambient signals.
     // We do all fetches before any ingest so that every market in this cycle
@@ -432,7 +456,7 @@ async function runCycleInner(): Promise<void> {
 
       try {
         const { upserted, signalsInserted, matchedAmbient } =
-          await ingestConnector(result, ambientPool, maxKelly);
+          await ingestConnector(result, ambientPool, maxKelly, calibrationFactors);
         totalMarkets += upserted;
         totalSignals += signalsInserted;
         state.connectorStatus.set(connector.name, {
@@ -549,10 +573,6 @@ export function stopOpenClaw(): void {
 /**
  * Iterate the named scheduled jobs. Each one is recorded as its own
  * openclaw_jobs row so the command center can show a per-job status board.
- * For the foundation, the bodies are stub no-ops that record summary
- * messages — follow-up tasks (#3 calibration, #2 deeper memory) will fill
- * them in with real work. The contract — that the jobs *exist*, run on
- * cadence, and have stable names — is what matters for the foundation.
  */
 async function runScheduledJobs(): Promise<void> {
   for (const kind of SCHEDULED_JOB_KINDS) {
@@ -574,8 +594,9 @@ async function runScheduledJobs(): Promise<void> {
         }
         message = `health: ${results.join(", ")}`;
       } else if (kind === "generate_daily_brief") {
+        const brief = await generateDailyBrief();
         state.lastDailyBriefAt = new Date();
-        message = `${kind} ok (brief generated at ${state.lastDailyBriefAt.toISOString()})`;
+        message = `brief generated at ${state.lastDailyBriefAt.toISOString()} (${brief.length} chars)`;
       } else if (kind === "compute_calibration_backtest") {
         // Idempotent: skip when one already ran in the last ~23h. The cycle
         // tick is every 60s, so without this guard we'd spam the backtest
@@ -584,7 +605,10 @@ async function runScheduledJobs(): Promise<void> {
           message = `${kind} skipped (ran within last 23h)`;
         } else {
           const r = await runStandardBacktests();
-          message = `${kind} ok (lookbacks=${r.ran.join(",")} scopes=${r.totalScopes})`;
+          // Invalidate the in-memory calibration cache so the next ingest
+          // cycle re-reads the freshly computed calibration factors.
+          invalidateCalibrationCache();
+          message = `${kind} ok (lookbacks=${r.ran.join(",")} scopes=${r.totalScopes}) — calibration cache invalidated`;
         }
       } else if (kind === "refresh_winner_wallets") {
         // Real work: pull a fresh snapshot for every tracked Polymarket
@@ -622,35 +646,60 @@ async function runScheduledJobs(): Promise<void> {
 }
 
 /**
- * Invoke a named on-demand job. Records an openclaw_jobs row with the kind
- * and payload, runs the (stubbed) body, and returns the finished row id.
- * Bodies are intentionally no-op summaries for the foundation — the
- * contract that matters is "the job exists, was asked for, and was
- * recorded with its payload".
+ * Invoke a named on-demand job. Records an openclaw_jobs row, executes the
+ * Claude-powered job body, persists results to the appropriate tables, and
+ * returns the finished row id.
  */
 export async function runOnDemandJob(
   kind: OnDemandJobKind,
   payload: Record<string, unknown> | undefined,
 ): Promise<number> {
   const start = new Date();
-  const summary = (() => {
-    const p = payload ?? {};
-    switch (kind) {
-      case "investigate_topic":
-        return `investigate_topic topic="${String(p.topic ?? "")}"`;
-      case "explain_prediction":
-        return `explain_prediction opportunityId=${p.opportunityId ?? ""}`;
-      case "find_historical_parallels":
-        return `find_historical_parallels question="${String(p.question ?? "")}"`;
-      case "evaluate_market":
-        return `evaluate_market opportunityId=${p.opportunityId ?? ""}`;
-      case "create_trade_plan":
-        return `create_trade_plan opportunityId=${p.opportunityId ?? ""}`;
-    }
-  })();
   const id = await recordJobStart(kind);
+  const p = payload ?? {};
+
   try {
-    await recordJobFinish(id, "ok", start, summary);
+    let message = "";
+
+    switch (kind) {
+      case "investigate_topic": {
+        const topic = String(p.topic ?? "general market overview");
+        const result = await runInvestigateTopic(topic);
+        message = `investigation #${result.investigationId} created for topic="${topic}" (${result.summary.length} chars)`;
+        break;
+      }
+      case "explain_prediction": {
+        const oppId = Number(p.opportunityId);
+        if (isNaN(oppId)) throw new Error("opportunityId must be a number");
+        const result = await runExplainPrediction(oppId);
+        message = `explanation generated for opportunity ${oppId} (${result.explanation.length} chars)`;
+        break;
+      }
+      case "find_historical_parallels": {
+        const question = String(p.question ?? "");
+        if (!question) throw new Error("question is required");
+        const oppId = p.opportunityId != null ? Number(p.opportunityId) : undefined;
+        const result = await runFindHistoricalParallels(question, oppId);
+        message = `found ${result.count} historical parallels for "${question.slice(0, 60)}"`;
+        break;
+      }
+      case "evaluate_market": {
+        const oppId = Number(p.opportunityId);
+        if (isNaN(oppId)) throw new Error("opportunityId must be a number");
+        const result = await runEvaluateMarket(oppId);
+        message = `evaluation: verdict=${result.verdict} suggestedProb=${(result.suggestedProb * 100).toFixed(1)}% for opportunity ${oppId}`;
+        break;
+      }
+      case "create_trade_plan": {
+        const oppId = Number(p.opportunityId);
+        if (isNaN(oppId)) throw new Error("opportunityId must be a number");
+        const result = await runCreateTradePlan(oppId);
+        message = `trade plan #${result.tradePlanId} created for opportunity ${oppId}`;
+        break;
+      }
+    }
+
+    await recordJobFinish(id, "ok", start, message);
     await db.insert(auditLog).values({
       actor: "user",
       action: "openclaw.on_demand_job",
@@ -659,9 +708,49 @@ export async function runOnDemandJob(
     });
     return id;
   } catch (err) {
-    await recordJobFinish(id, "error", start, err instanceof Error ? err.message : String(err));
+    const errMsg = err instanceof Error ? err.message : String(err);
+    await recordJobFinish(id, "error", start, errMsg);
+    logger.warn({ kind, payload, err }, "on-demand job failed");
     throw err;
   }
+}
+
+/**
+ * Generate the daily intelligence brief: a Claude-written summary of the
+ * current opportunity universe, top signals, calibration health, and open
+ * positions. Stored as an observation so the agent can reference it.
+ */
+async function generateDailyBrief(): Promise<string> {
+  const ctx = await buildAgentContext();
+  const contextBlock = renderAgentContext(ctx);
+
+  const msg = await anthropic.messages.create({
+    model: "claude-sonnet-4-6",
+    max_tokens: 2000,
+    system: `You are Cassandra's daily briefing agent. Produce a concise, actionable daily
+intelligence brief covering: (1) top prediction market opportunities with edge, (2) key signals
+driving predictions, (3) open positions status, (4) calibration health, (5) risks to watch today.
+
+Format: markdown with sections. Be specific with numbers. Calibrated, no hype.`,
+    messages: [
+      {
+        role: "user",
+        content: `Generate today's Cassandra daily brief based on this live context:\n\n${contextBlock}`,
+      },
+    ],
+  });
+
+  const block = msg.content[0];
+  const brief = block.type === "text" ? block.text : "(brief generation failed)";
+
+  await db.insert(observations).values({
+    source: "scheduled:generate_daily_brief",
+    domain: "prediction_market",
+    body: brief,
+    metadata: { generatedAt: new Date().toISOString() },
+  });
+
+  return brief;
 }
 
 export function openClawSnapshot(): {
