@@ -1,6 +1,6 @@
-import { useGetDashboardSummary } from "@workspace/api-client-react";
+import { useGetDashboardSummary, useGetBacktestSummary } from "@workspace/api-client-react";
 import { formatCurrency, formatPercent, formatCompactNumber, formatDateTime } from "@/lib/format";
-import { AlertTriangle, Activity, Target, TrendingUp, ShieldAlert, BarChart3, PieChart, Bell, LineChart, Shuffle, Bot } from "lucide-react";
+import { AlertTriangle, Activity, Target, TrendingUp, ShieldAlert, BarChart3, PieChart, Bell, LineChart, Shuffle, Bot, Gauge } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -9,6 +9,8 @@ import { Link } from "wouter";
 
 export default function Dashboard() {
   const { data: summary, isLoading, isError } = useGetDashboardSummary();
+  const { data: backtest } = useGetBacktestSummary();
+  const headline30d = backtest?.headlines.find((h) => h.lookbackDays === 30);
 
   if (isLoading) {
     return (
@@ -54,7 +56,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card className="bg-card/50">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground uppercase">Paper P&L (Realized)</CardTitle>
@@ -114,6 +116,45 @@ export default function Dashboard() {
             </p>
           </CardContent>
         </Card>
+
+        {/* 30D Calibration tile — links into the Backtest page. */}
+        <Link
+          href="/backtest?lookbackDays=30"
+          className="block group"
+          data-testid="dashboard-tile-calibration"
+        >
+          <Card className="bg-card/50 group-hover:border-primary/40 transition-colors h-full">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground uppercase">
+                30D Calibration
+              </CardTitle>
+              <Gauge className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              {headline30d ? (
+                <>
+                  <div className="text-2xl font-bold text-primary">
+                    Brier{" "}
+                    {headline30d.brierScore != null
+                      ? headline30d.brierScore.toFixed(3)
+                      : "—"}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Hit {formatPercent(headline30d.hitRate ?? 0)} ·{" "}
+                    {headline30d.totalEntries} resolved
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="text-2xl font-bold text-muted-foreground">—</div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    No backtest yet. Open page to run.
+                  </p>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </Link>
       </div>
 
       {/* Risk alerts banner: render anything backend flagged so the operator

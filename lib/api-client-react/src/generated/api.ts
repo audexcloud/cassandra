@@ -22,11 +22,14 @@ import type {
   AnthropicError,
   AnthropicMessage,
   ApiError,
+  BacktestCalibration,
+  BacktestHeadlineSummary,
   ClosePaperTradeBody,
   CreateAnthropicConversationBody,
   CreateJournalEntryBody,
   CreatePaperTradeBody,
   DashboardSummary,
+  GetBacktestCalibrationParams,
   HealthStatus,
   JournalEntry,
   ListJournalEntriesParams,
@@ -1847,6 +1850,267 @@ export const useStructuredAgentQuery = <
   TContext
 > => {
   return useMutation(getStructuredAgentQueryMutationOptions(options));
+};
+
+/**
+ * Returns the latest "overall" backtest run for each of 30/90/365 day lookbacks. Use this to drive a "30D Calibration" tile on the dashboard without having to fetch the full bucket data.
+
+ * @summary One-line headline calibration metrics for the standard lookback windows
+ */
+export const getGetBacktestSummaryUrl = () => {
+  return `/api/backtest/summary`;
+};
+
+export const getBacktestSummary = async (
+  options?: RequestInit,
+): Promise<BacktestHeadlineSummary> => {
+  return customFetch<BacktestHeadlineSummary>(getGetBacktestSummaryUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetBacktestSummaryQueryKey = () => {
+  return [`/api/backtest/summary`] as const;
+};
+
+export const getGetBacktestSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBacktestSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBacktestSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetBacktestSummaryQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getBacktestSummary>>
+  > = ({ signal }) => getBacktestSummary({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBacktestSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBacktestSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBacktestSummary>>
+>;
+export type GetBacktestSummaryQueryError = ErrorType<unknown>;
+
+/**
+ * @summary One-line headline calibration metrics for the standard lookback windows
+ */
+
+export function useGetBacktestSummary<
+  TData = Awaited<ReturnType<typeof getBacktestSummary>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getBacktestSummary>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBacktestSummaryQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Latest calibration curve + metrics for a given scope and lookback
+ */
+export const getGetBacktestCalibrationUrl = (
+  params?: GetBacktestCalibrationParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/backtest/calibration?${stringifiedParams}`
+    : `/api/backtest/calibration`;
+};
+
+export const getBacktestCalibration = async (
+  params?: GetBacktestCalibrationParams,
+  options?: RequestInit,
+): Promise<BacktestCalibration> => {
+  return customFetch<BacktestCalibration>(
+    getGetBacktestCalibrationUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetBacktestCalibrationQueryKey = (
+  params?: GetBacktestCalibrationParams,
+) => {
+  return [`/api/backtest/calibration`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetBacktestCalibrationQueryOptions = <
+  TData = Awaited<ReturnType<typeof getBacktestCalibration>>,
+  TError = ErrorType<ApiError>,
+>(
+  params?: GetBacktestCalibrationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBacktestCalibration>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetBacktestCalibrationQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getBacktestCalibration>>
+  > = ({ signal }) =>
+    getBacktestCalibration(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getBacktestCalibration>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetBacktestCalibrationQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getBacktestCalibration>>
+>;
+export type GetBacktestCalibrationQueryError = ErrorType<ApiError>;
+
+/**
+ * @summary Latest calibration curve + metrics for a given scope and lookback
+ */
+
+export function useGetBacktestCalibration<
+  TData = Awaited<ReturnType<typeof getBacktestCalibration>>,
+  TError = ErrorType<ApiError>,
+>(
+  params?: GetBacktestCalibrationParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getBacktestCalibration>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetBacktestCalibrationQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Force a fresh backtest run for all standard lookback windows
+ */
+export const getRunBacktestUrl = () => {
+  return `/api/backtest/run`;
+};
+
+export const runBacktest = async (
+  options?: RequestInit,
+): Promise<BacktestHeadlineSummary> => {
+  return customFetch<BacktestHeadlineSummary>(getRunBacktestUrl(), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getRunBacktestMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runBacktest>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runBacktest>>,
+  TError,
+  void,
+  TContext
+> => {
+  const mutationKey = ["runBacktest"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runBacktest>>,
+    void
+  > = () => {
+    return runBacktest(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunBacktestMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runBacktest>>
+>;
+
+export type RunBacktestMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Force a fresh backtest run for all standard lookback windows
+ */
+export const useRunBacktest = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runBacktest>>,
+    TError,
+    void,
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runBacktest>>,
+  TError,
+  void,
+  TContext
+> => {
+  return useMutation(getRunBacktestMutationOptions(options));
 };
 
 /**

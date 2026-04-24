@@ -26,6 +26,8 @@ tags:
     description: Risk configuration and kill switch
   - name: anthropic
     description: Anthropic AI chat operations
+  - name: backtest
+    description: Backtesting + calibration scoring of historical predictions
 paths:
   /healthz:
     get:
@@ -479,6 +481,72 @@ paths:
           description: Bad request
         "502":
           description: Agent failed to return valid structured JSON
+
+  /backtest/summary:
+    get:
+      operationId: getBacktestSummary
+      tags: [backtest]
+      summary: One-line headline calibration metrics for the standard lookback windows
+      description: >
+        Returns the latest "overall" backtest run for each of 30/90/365 day
+        lookbacks. Use this to drive a "30D Calibration" tile on the dashboard
+        without having to fetch the full bucket data.
+      responses:
+        "200":
+          description: Backtest headline summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BacktestHeadlineSummary"
+
+  /backtest/calibration:
+    get:
+      operationId: getBacktestCalibration
+      tags: [backtest]
+      summary: Latest calibration curve + metrics for a given scope and lookback
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          description: >
+            "overall" (default), "domain:<domain>" (e.g. "domain:macro"), or
+            "signalCategory:<category>" (e.g. "signalCategory:observation_heavy").
+          schema:
+            type: string
+            default: overall
+        - name: lookbackDays
+          in: query
+          required: false
+          schema:
+            type: integer
+            enum: [30, 90, 365]
+            default: 30
+      responses:
+        "200":
+          description: Calibration data for the requested scope
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BacktestCalibration"
+        "404":
+          description: No backtest run exists for the requested (scope, lookbackDays)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /backtest/run:
+    post:
+      operationId: runBacktest
+      tags: [backtest]
+      summary: Force a fresh backtest run for all standard lookback windows
+      responses:
+        "200":
+          description: Backtest run dispatched
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BacktestHeadlineSummary"
 
   /anthropic/conversations:
     get:
@@ -1475,6 +1543,110 @@ components:
           oneOf:
             - $ref: "#/components/schemas/StructuredAgentTradePlan"
             - type: "null"
+
+    BacktestCalibrationBucket:
+      type: object
+      required: [bucketLow, bucketHigh, predictedAvg, realizedRate, count]
+      properties:
+        bucketLow: { type: number }
+        bucketHigh: { type: number }
+        predictedAvg: { type: number }
+        realizedRate: { type: number }
+        count: { type: integer }
+
+    BacktestHitRateBucket:
+      type: object
+      required: [low, high, hitRate, count]
+      properties:
+        low: { type: number }
+        high: { type: number }
+        hitRate: { type: number }
+        count: { type: integer }
+
+    BacktestCalibration:
+      type: object
+      required:
+        - scope
+        - lookbackDays
+        - runAt
+        - totalEntries
+        - buckets
+        - hitRateByBucket
+      properties:
+        scope:
+          type: string
+          description: "overall, or domain:<domain>, or signalCategory:<category>"
+        lookbackDays:
+          type: integer
+          enum: [30, 90, 365]
+        runAt:
+          type: string
+          format: date-time
+        totalEntries:
+          type: integer
+          description: Number of resolved journal entries inside the lookback window for this scope.
+        brierScore:
+          type: number
+          nullable: true
+          description: Lower is better. Null when totalEntries is 0.
+        logLoss:
+          type: number
+          nullable: true
+        hitRate:
+          type: number
+          nullable: true
+          description: Fraction of predictions whose >=0.5 side matched the realised outcome.
+        buckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/BacktestCalibrationBucket"
+        hitRateByBucket:
+          type: array
+          description: >
+            Per-confidence-bucket hit rate (bucketed by |2p-1|, not by raw p).
+            Snapshotted on the run row at the time of the run, so it is
+            stable for historical runs and does not drift when journal
+            entries are edited later — same guarantee as `buckets`,
+            `brierScore`, `logLoss`, and `hitRate`.
+          items:
+            $ref: "#/components/schemas/BacktestHitRateBucket"
+
+    BacktestHeadlineRow:
+      type: object
+      required: [lookbackDays, totalEntries]
+      properties:
+        lookbackDays:
+          type: integer
+          enum: [30, 90, 365]
+        totalEntries:
+          type: integer
+        brierScore:
+          type: number
+          nullable: true
+        logLoss:
+          type: number
+          nullable: true
+        hitRate:
+          type: number
+          nullable: true
+        runAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    BacktestHeadlineSummary:
+      type: object
+      required: [scopes, headlines]
+      properties:
+        scopes:
+          type: array
+          description: All scope names that have any backtest data — useful to populate dropdowns.
+          items: { type: string }
+        headlines:
+          type: array
+          description: Latest "overall" run for each standard lookback window.
+          items:
+            $ref: "#/components/schemas/BacktestHeadlineRow"
 
     AnthropicConversation:
       type: object

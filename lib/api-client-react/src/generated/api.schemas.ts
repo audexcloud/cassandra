@@ -552,6 +552,73 @@ export interface StructuredAgentResponse {
   tradePlan?: StructuredAgentTradePlan | null;
 }
 
+export interface BacktestCalibrationBucket {
+  bucketLow: number;
+  bucketHigh: number;
+  predictedAvg: number;
+  realizedRate: number;
+  count: number;
+}
+
+export interface BacktestHitRateBucket {
+  low: number;
+  high: number;
+  hitRate: number;
+  count: number;
+}
+
+export type BacktestCalibrationLookbackDays =
+  (typeof BacktestCalibrationLookbackDays)[keyof typeof BacktestCalibrationLookbackDays];
+
+export const BacktestCalibrationLookbackDays = {
+  NUMBER_30: 30,
+  NUMBER_90: 90,
+  NUMBER_365: 365,
+} as const;
+
+export interface BacktestCalibration {
+  /** overall, or domain:<domain>, or signalCategory:<category> */
+  scope: string;
+  lookbackDays: BacktestCalibrationLookbackDays;
+  runAt: string;
+  /** Number of resolved journal entries inside the lookback window for this scope. */
+  totalEntries: number;
+  /** Lower is better. Null when totalEntries is 0. */
+  brierScore?: number | null;
+  logLoss?: number | null;
+  /** Fraction of predictions whose >=0.5 side matched the realised outcome. */
+  hitRate?: number | null;
+  buckets: BacktestCalibrationBucket[];
+  /** Per-confidence-bucket hit rate (bucketed by |2p-1|, not by raw p). Snapshotted on the run row at the time of the run, so it is stable for historical runs and does not drift when journal entries are edited later — same guarantee as `buckets`, `brierScore`, `logLoss`, and `hitRate`.
+   */
+  hitRateByBucket: BacktestHitRateBucket[];
+}
+
+export type BacktestHeadlineRowLookbackDays =
+  (typeof BacktestHeadlineRowLookbackDays)[keyof typeof BacktestHeadlineRowLookbackDays];
+
+export const BacktestHeadlineRowLookbackDays = {
+  NUMBER_30: 30,
+  NUMBER_90: 90,
+  NUMBER_365: 365,
+} as const;
+
+export interface BacktestHeadlineRow {
+  lookbackDays: BacktestHeadlineRowLookbackDays;
+  totalEntries: number;
+  brierScore?: number | null;
+  logLoss?: number | null;
+  hitRate?: number | null;
+  runAt?: string | null;
+}
+
+export interface BacktestHeadlineSummary {
+  /** All scope names that have any backtest data — useful to populate dropdowns. */
+  scopes: string[];
+  /** Latest "overall" run for each standard lookback window. */
+  headlines: BacktestHeadlineRow[];
+}
+
 export interface AnthropicConversation {
   id: number;
   title: string;
@@ -637,3 +704,21 @@ export type ListOpenClawJobsParams = {
    */
   limit?: number;
 };
+
+export type GetBacktestCalibrationParams = {
+  /**
+ * "overall" (default), "domain:<domain>" (e.g. "domain:macro"), or "signalCategory:<category>" (e.g. "signalCategory:observation_heavy").
+
+ */
+  scope?: string;
+  lookbackDays?: GetBacktestCalibrationLookbackDays;
+};
+
+export type GetBacktestCalibrationLookbackDays =
+  (typeof GetBacktestCalibrationLookbackDays)[keyof typeof GetBacktestCalibrationLookbackDays];
+
+export const GetBacktestCalibrationLookbackDays = {
+  NUMBER_30: 30,
+  NUMBER_90: 90,
+  NUMBER_365: 365,
+} as const;

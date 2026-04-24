@@ -29,6 +29,7 @@ This is **Cassandra** — a single-user, local-first personal predictive intelli
 - **Live Signal Feed** — domain/kind filtered timeline of news, data releases, options flow, etc.
 - **Paper Trades** — open & closed positions with mark-to-market unrealized P&L, close action settles against current model probability.
 - **Prediction Journal** — calibrated forecasts captured with the same four-bucket epistemic structure.
+- **Backtest** — calibration of historical journal forecasts vs realised outcomes. Brier score, log-loss and hit rate over 30/90/365 day windows; reliability scatter (predicted vs realised, sized by N) with the perfect-calibration diagonal; hit-rate-by-confidence-bucket bar chart. Scope-switchable across `overall`, every `domain:<d>`, and every `signalCategory:<observation_heavy|inference_heavy|speculation_heavy|uncategorized>`. The dashboard "30D Calibration" tile and the "View calibration" button on the Universe page deep-link into the relevant scope.
 - **OpenClaw Command Center** — orchestrator status, connector health, recent jobs, manual "Run cycle now" trigger.
 - **Risk Settings** — kill switch, max Kelly fraction, max position USD, bankroll. `liveExecutionEnabled` is read-only (always false) and explained.
 - **Agent Chat** — streaming Claude conversation grounded in the live opportunity universe and signal feed; persists messages in Postgres.

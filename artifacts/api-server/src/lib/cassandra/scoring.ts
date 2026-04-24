@@ -247,6 +247,165 @@ export function weightedRandomPick<T extends { edgeScore: number }>(
   return items[items.length - 1];
 }
 
+// ---------- Calibration / backtesting ----------
+
+/**
+ * A single resolved prediction: `predicted` is the forecasted probability
+ * the binary outcome occurs in (0, 1), `realized` is 1 if the outcome
+ * happened and 0 otherwise.
+ */
+export interface CalibrationDatum {
+  predicted: number;
+  realized: 0 | 1;
+}
+
+export interface CalibrationBucket {
+  low: number;
+  high: number;
+  predictedAvg: number;
+  realizedRate: number;
+  count: number;
+}
+
+/**
+ * Brier score: mean squared error between predicted probability and
+ * realized outcome. Lower is better; 0 is perfect, 0.25 is the Brier
+ * score of "always predict 0.5".
+ */
+export function brierScore(items: CalibrationDatum[]): number {
+  if (items.length === 0) return 0;
+  let sum = 0;
+  for (const it of items) {
+    const p = clamp01(it.predicted);
+    const o = it.realized;
+    sum += (p - o) * (p - o);
+  }
+  return sum / items.length;
+}
+
+/**
+ * Log loss (cross-entropy). Lower is better; predictions are clamped into
+ * (eps, 1-eps) to avoid -Infinity on overconfident misses.
+ */
+export function logLoss(items: CalibrationDatum[], eps = 1e-6): number {
+  if (items.length === 0) return 0;
+  let sum = 0;
+  for (const it of items) {
+    const p = clamp(it.predicted, eps, 1 - eps);
+    const o = it.realized;
+    sum += -(o * Math.log(p) + (1 - o) * Math.log(1 - p));
+  }
+  return sum / items.length;
+}
+
+/**
+ * Bucketise items into N equal-width probability buckets across [0, 1].
+ * Each bucket reports the mean predicted probability of items inside it,
+ * the empirical realized rate, and the count. A perfectly calibrated
+ * forecaster has `realizedRate ≈ predictedAvg` for every populated bucket.
+ */
+export function bucketize(
+  items: CalibrationDatum[],
+  numBuckets = 10,
+): CalibrationBucket[] {
+  const n = Math.max(1, Math.floor(numBuckets));
+  const buckets: CalibrationBucket[] = [];
+  for (let i = 0; i < n; i++) {
+    buckets.push({
+      low: i / n,
+      high: (i + 1) / n,
+      predictedAvg: 0,
+      realizedRate: 0,
+      count: 0,
+    });
+  }
+  // Running sums per bucket so we can compute means at the end.
+  const sums = buckets.map(() => ({ predicted: 0, realized: 0 }));
+  for (const it of items) {
+    const p = clamp01(it.predicted);
+    // The top of the range falls into the last bucket, not a phantom n+1.
+    const idx = Math.min(n - 1, Math.floor(p * n));
+    sums[idx].predicted += p;
+    sums[idx].realized += it.realized;
+    buckets[idx].count++;
+  }
+  for (let i = 0; i < n; i++) {
+    if (buckets[i].count > 0) {
+      buckets[i].predictedAvg = sums[i].predicted / buckets[i].count;
+      buckets[i].realizedRate = sums[i].realized / buckets[i].count;
+    } else {
+      // Use the bucket's midpoint so an empty bucket doesn't fake a perfect 0.
+      buckets[i].predictedAvg = (buckets[i].low + buckets[i].high) / 2;
+      buckets[i].realizedRate = 0;
+    }
+  }
+  return buckets;
+}
+
+/**
+ * Realised hit rate per confidence bucket: for each bucket, the fraction of
+ * predictions whose realised outcome agreed with the side they were
+ * pricing in (predicted >= 0.5 → expected YES, else expected NO).
+ */
+export function hitRateByConfidenceBucket(
+  items: CalibrationDatum[],
+  numBuckets = 10,
+): Array<{ low: number; high: number; hitRate: number; count: number }> {
+  const n = Math.max(1, Math.floor(numBuckets));
+  // Bucket by *confidence* (= |2p - 1|) rather than by raw probability,
+  // so 0.05 and 0.95 are both "very confident" and 0.5 is "no edge".
+  const out = Array.from({ length: n }, (_, i) => ({
+    low: i / n,
+    high: (i + 1) / n,
+    hits: 0,
+    total: 0,
+  }));
+  for (const it of items) {
+    const p = clamp01(it.predicted);
+    const conf = Math.abs(2 * p - 1);
+    const idx = Math.min(n - 1, Math.floor(conf * n));
+    const expected = p >= 0.5 ? 1 : 0;
+    if (expected === it.realized) out[idx].hits++;
+    out[idx].total++;
+  }
+  return out.map((b) => ({
+    low: b.low,
+    high: b.high,
+    count: b.total,
+    hitRate: b.total === 0 ? 0 : b.hits / b.total,
+  }));
+}
+
+/**
+ * Categorise a journal entry by its predominant evidence bucket. Used to
+ * group calibration metrics by "signal category" — i.e. is this forecast
+ * mostly grounded in observed facts, inference, or speculation?
+ *
+ * Returns one of: "observation_heavy", "inference_heavy",
+ * "speculation_heavy", or "uncategorized" (when there is no evidence).
+ */
+export type SignalCategory =
+  | "observation_heavy"
+  | "inference_heavy"
+  | "speculation_heavy"
+  | "uncategorized";
+
+export function signalCategoryFromEvidence(input: {
+  observed?: unknown[] | null;
+  inferred?: unknown[] | null;
+  speculation?: unknown[] | null;
+}): SignalCategory {
+  const o = input.observed?.length ?? 0;
+  const i = input.inferred?.length ?? 0;
+  const s = input.speculation?.length ?? 0;
+  if (o + i + s === 0) return "uncategorized";
+  if (o >= i && o >= s) return "observation_heavy";
+  if (i >= o && i >= s) return "inference_heavy";
+  return "speculation_heavy";
+}
+
+// ---------- /Calibration ----------
+
 /**
  * Map an edge score to a 0-1 confidence we publish. We take a slightly
  * pessimistic transform: low edges look low, high edges saturate.

@@ -1175,6 +1175,125 @@ export const StructuredAgentQueryResponse = zod.object({
 });
 
 /**
+ * Returns the latest "overall" backtest run for each of 30/90/365 day lookbacks. Use this to drive a "30D Calibration" tile on the dashboard without having to fetch the full bucket data.
+
+ * @summary One-line headline calibration metrics for the standard lookback windows
+ */
+export const GetBacktestSummaryResponse = zod.object({
+  scopes: zod
+    .array(zod.string())
+    .describe(
+      "All scope names that have any backtest data — useful to populate dropdowns.",
+    ),
+  headlines: zod
+    .array(
+      zod.object({
+        lookbackDays: zod.union([
+          zod.literal(30),
+          zod.literal(90),
+          zod.literal(365),
+        ]),
+        totalEntries: zod.number(),
+        brierScore: zod.number().nullish(),
+        logLoss: zod.number().nullish(),
+        hitRate: zod.number().nullish(),
+        runAt: zod.coerce.date().nullish(),
+      }),
+    )
+    .describe('Latest \"overall\" run for each standard lookback window.'),
+});
+
+/**
+ * @summary Latest calibration curve + metrics for a given scope and lookback
+ */
+export const getBacktestCalibrationQueryScopeDefault = `overall`;
+export const getBacktestCalibrationQueryLookbackDaysDefault = 30;
+
+export const GetBacktestCalibrationQueryParams = zod.object({
+  scope: zod.coerce
+    .string()
+    .default(getBacktestCalibrationQueryScopeDefault)
+    .describe(
+      '\"overall\" (default), \"domain:<domain>\" (e.g. \"domain:macro\"), or \"signalCategory:<category>\" (e.g. \"signalCategory:observation_heavy\").\n',
+    ),
+  lookbackDays: zod
+    .union([zod.literal(30), zod.literal(90), zod.literal(365)])
+    .default(getBacktestCalibrationQueryLookbackDaysDefault),
+});
+
+export const GetBacktestCalibrationResponse = zod.object({
+  scope: zod
+    .string()
+    .describe("overall, or domain:<domain>, or signalCategory:<category>"),
+  lookbackDays: zod.union([zod.literal(30), zod.literal(90), zod.literal(365)]),
+  runAt: zod.coerce.date(),
+  totalEntries: zod
+    .number()
+    .describe(
+      "Number of resolved journal entries inside the lookback window for this scope.",
+    ),
+  brierScore: zod
+    .number()
+    .nullish()
+    .describe("Lower is better. Null when totalEntries is 0."),
+  logLoss: zod.number().nullish(),
+  hitRate: zod
+    .number()
+    .nullish()
+    .describe(
+      "Fraction of predictions whose >=0.5 side matched the realised outcome.",
+    ),
+  buckets: zod.array(
+    zod.object({
+      bucketLow: zod.number(),
+      bucketHigh: zod.number(),
+      predictedAvg: zod.number(),
+      realizedRate: zod.number(),
+      count: zod.number(),
+    }),
+  ),
+  hitRateByBucket: zod
+    .array(
+      zod.object({
+        low: zod.number(),
+        high: zod.number(),
+        hitRate: zod.number(),
+        count: zod.number(),
+      }),
+    )
+    .describe(
+      "Per-confidence-bucket hit rate (bucketed by |2p-1|, not by raw p). Snapshotted on the run row at the time of the run, so it is stable for historical runs and does not drift when journal entries are edited later — same guarantee as `buckets`, `brierScore`, `logLoss`, and `hitRate`.\n",
+    ),
+});
+
+/**
+ * @summary Force a fresh backtest run for all standard lookback windows
+ */
+export const RunBacktestResponse = zod.object({
+  scopes: zod
+    .array(zod.string())
+    .describe(
+      "All scope names that have any backtest data — useful to populate dropdowns.",
+    ),
+  headlines: zod
+    .array(
+      zod.object({
+        lookbackDays: zod.union([
+          zod.literal(30),
+          zod.literal(90),
+          zod.literal(365),
+        ]),
+        totalEntries: zod.number(),
+        brierScore: zod.number().nullish(),
+        logLoss: zod.number().nullish(),
+        hitRate: zod.number().nullish(),
+        runAt: zod.coerce.date().nullish(),
+      }),
+    )
+    .describe('Latest \"overall\" run for each standard lookback window.'),
+});
+
+/**
  * @summary List all conversations
  */
 export const ListAnthropicConversationsResponseItem = zod.object({

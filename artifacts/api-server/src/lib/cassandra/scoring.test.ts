@@ -1,11 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
   aggregateModelProb,
+  brierScore,
+  bucketize,
   edgeScore,
   evaluateRiskGate,
+  hitRateByConfidenceBucket,
   kellyFraction,
+  logLoss,
   paperPnl,
   priceForSide,
+  signalCategoryFromEvidence,
   suggestedDirection,
   weightedRandomPick,
 } from "./scoring";
@@ -174,6 +179,100 @@ describe("evaluateRiskGate", () => {
       config: { ...baseCfg, maxSpread: 0.1 },
     });
     expect(r.allowed).toBe(true);
+  });
+});
+
+describe("brierScore / logLoss / bucketize / hitRateByConfidenceBucket / signalCategoryFromEvidence", () => {
+  it("brierScore returns 0 for perfect predictions", () => {
+    const items = [
+      { predicted: 1, realized: 1 as const },
+      { predicted: 0, realized: 0 as const },
+    ];
+    expect(brierScore(items)).toBeCloseTo(0, 6);
+  });
+
+  it("brierScore returns 0.25 for the always-0.5 baseline", () => {
+    const items = [
+      { predicted: 0.5, realized: 1 as const },
+      { predicted: 0.5, realized: 0 as const },
+      { predicted: 0.5, realized: 1 as const },
+      { predicted: 0.5, realized: 0 as const },
+    ];
+    expect(brierScore(items)).toBeCloseTo(0.25, 6);
+  });
+
+  it("brierScore is 0 on empty input (defined fallback)", () => {
+    expect(brierScore([])).toBe(0);
+  });
+
+  it("logLoss is 0 for confident, correct predictions", () => {
+    const items = [
+      { predicted: 0.999999, realized: 1 as const },
+      { predicted: 0.000001, realized: 0 as const },
+    ];
+    expect(logLoss(items)).toBeLessThan(0.001);
+  });
+
+  it("logLoss penalises confident wrong predictions heavily", () => {
+    const a = logLoss([{ predicted: 0.5, realized: 0 }]);
+    const b = logLoss([{ predicted: 0.99, realized: 0 }]);
+    expect(b).toBeGreaterThan(a);
+  });
+
+  it("logLoss is finite even for predicted=0/1 (eps-clamped)", () => {
+    expect(Number.isFinite(logLoss([{ predicted: 0, realized: 1 }]))).toBe(true);
+    expect(Number.isFinite(logLoss([{ predicted: 1, realized: 0 }]))).toBe(true);
+  });
+
+  it("bucketize returns N buckets covering [0,1]", () => {
+    const buckets = bucketize([], 10);
+    expect(buckets).toHaveLength(10);
+    expect(buckets[0].low).toBe(0);
+    expect(buckets[9].high).toBe(1);
+    for (const b of buckets) expect(b.count).toBe(0);
+  });
+
+  it("bucketize routes predicted=1.0 into the last bucket (no phantom bucket)", () => {
+    const buckets = bucketize([{ predicted: 1, realized: 1 }], 10);
+    expect(buckets[9].count).toBe(1);
+    expect(buckets[9].realizedRate).toBe(1);
+  });
+
+  it("bucketize reports realizedRate close to predictedAvg for a perfectly calibrated forecaster", () => {
+    // For p=0.7, generate 70 wins and 30 losses → realizedRate should be 0.7.
+    const items: Array<{ predicted: number; realized: 0 | 1 }> = [];
+    for (let i = 0; i < 70; i++) items.push({ predicted: 0.7, realized: 1 });
+    for (let i = 0; i < 30; i++) items.push({ predicted: 0.7, realized: 0 });
+    const buckets = bucketize(items, 10);
+    const populated = buckets.find((b) => b.count > 0)!;
+    expect(populated.predictedAvg).toBeCloseTo(0.7, 6);
+    expect(populated.realizedRate).toBeCloseTo(0.7, 6);
+    expect(populated.count).toBe(100);
+  });
+
+  it("hitRateByConfidenceBucket buckets by confidence (|2p-1|), not by raw probability", () => {
+    // 0.95 and 0.05 both land in the highest-confidence bucket (conf ~0.9);
+    // both correct (0.95→YES happened, 0.05→NO happened).
+    const items: Array<{ predicted: number; realized: 0 | 1 }> = [
+      { predicted: 0.95, realized: 1 },
+      { predicted: 0.05, realized: 0 },
+    ];
+    const buckets = hitRateByConfidenceBucket(items, 10);
+    expect(buckets[9].count).toBe(2);
+    expect(buckets[9].hitRate).toBe(1);
+  });
+
+  it("signalCategoryFromEvidence picks the predominant evidence kind", () => {
+    expect(signalCategoryFromEvidence({ observed: ["a", "b"], inferred: ["x"], speculation: [] })).toBe(
+      "observation_heavy",
+    );
+    expect(signalCategoryFromEvidence({ observed: [], inferred: ["a", "b", "c"], speculation: ["x"] })).toBe(
+      "inference_heavy",
+    );
+    expect(signalCategoryFromEvidence({ observed: [], inferred: [], speculation: ["a", "b"] })).toBe(
+      "speculation_heavy",
+    );
+    expect(signalCategoryFromEvidence({})).toBe("uncategorized");
   });
 });
 

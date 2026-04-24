@@ -4,7 +4,8 @@ import { formatPercent } from "@/lib/format";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ExternalLink, Filter } from "lucide-react";
+import { ExternalLink, Filter, Gauge } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -41,6 +42,21 @@ export default function Opportunities() {
               <SelectItem value="macro">MACRO</SelectItem>
             </SelectContent>
           </Select>
+          {/* Per-domain calibration link. When the operator has narrowed
+              to a domain, jump straight to that scope on the Backtest page. */}
+          <Link
+            href={
+              domainFilter === "all"
+                ? "/backtest"
+                : `/backtest?scope=${encodeURIComponent(`domain:${domainFilter}`)}&lookbackDays=30`
+            }
+            data-testid="opp-calibration-link"
+          >
+            <Button variant="outline" size="sm" className="gap-1">
+              <Gauge className="w-3.5 h-3.5" />
+              {domainFilter === "all" ? "Calibration" : "View calibration"}
+            </Button>
+          </Link>
         </div>
       </div>
 

@@ -7,6 +7,7 @@ import {
   Crosshair,
   Eye,
   LineChart,
+  Gauge,
   MessageSquare,
   Radio,
   Settings,
@@ -60,6 +61,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
     { href: "/signals", label: "Signals Feed", icon: Activity },
     { href: "/paper", label: "Paper Trades", icon: LineChart },
     { href: "/journal", label: "Journal", icon: BookOpen },
+    { href: "/backtest", label: "Backtest", icon: Gauge },
     { href: "/openclaw", label: "OpenClaw", icon: Radio },
     { href: "/agent", label: "Agent", icon: MessageSquare },
   ];

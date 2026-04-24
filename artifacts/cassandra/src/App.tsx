@@ -18,6 +18,7 @@ import JournalDetail from "@/pages/JournalDetail";
 import OpenClaw from "@/pages/OpenClaw";
 import Risk from "@/pages/Risk";
 import Agent from "@/pages/Agent";
+import Backtest from "@/pages/Backtest";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient();
@@ -39,6 +40,7 @@ function Router() {
         <Route path="/openclaw" component={OpenClaw} />
         <Route path="/risk" component={Risk} />
         <Route path="/agent" component={Agent} />
+        <Route path="/backtest" component={Backtest} />
         <Route component={NotFound} />
       </Switch>
     </Shell>

@@ -5,6 +5,7 @@
  * signal universe is populated by the OpenClaw orchestrator on first cycle.
  */
 
+import { sql as drizzleSql } from "drizzle-orm";
 import { db } from "@workspace/db";
 import {
   riskConfig,
@@ -14,6 +15,7 @@ import {
   scoringModelVersions,
   autopilotConfig,
   thesisProfiles,
+  journalEntries,
 } from "@workspace/db";
 
 const PATTERNS = [
@@ -160,4 +162,86 @@ export async function ensureSeed(): Promise<void> {
   if (sourceExisting.length === 0) {
     await db.insert(sourceReliability).values(SOURCES);
   }
+
+  await ensureJournalBacktestSeed();
+}
+
+/**
+ * Seed a small set of resolved journal entries spread across the last
+ * ~120 days, so the Backtest page renders meaningful calibration curves
+ * on a fresh install rather than empty plots. Idempotent: only inserts
+ * when the journal table is empty.
+ */
+async function ensureJournalBacktestSeed(): Promise<void> {
+  // We seed when there are no *resolved* historical entries. The journal
+  // can already contain a few unresolved entries from prior dev sessions
+  // and we want the Backtest page to still have data to chart.
+  const [{ n }] = await db
+    .select({ n: drizzleSql<number>`count(*)::int` })
+    .from(journalEntries)
+    .where(drizzleSql`${journalEntries.outcome} in ('yes','no')`);
+  if (n > 0) return;
+
+  const now = Date.now();
+  const dayMs = 24 * 60 * 60 * 1000;
+  const domains = ["macro", "geopolitics", "commodities", "policy"] as const;
+
+  type SeedRow = {
+    title: string;
+    domain: (typeof domains)[number];
+    question: string;
+    forecastProb: number;
+    realized: 0 | 1;
+    daysAgo: number;
+    observed: string[];
+    inferred: string[];
+    speculation: string[];
+  };
+
+  const rows: SeedRow[] = [];
+  // Generate ~60 entries: a mix of well-calibrated and a few systematic
+  // misses, distributed across domains and signal categories.
+  let i = 0;
+  for (const dom of domains) {
+    for (const p of [0.15, 0.25, 0.4, 0.55, 0.7, 0.85, 0.92]) {
+      // For each probability tier, generate 2 entries — one realized YES,
+      // one realized NO. Across the full set this approximates a calibrated
+      // forecaster with some intentional noise so the curves are not boring.
+      for (const realised of [1, 0] as const) {
+        const drift = i % 5 === 0 ? -0.05 : 0; // small intentional miscalibration
+        rows.push({
+          title: `${dom} signal #${i + 1}`,
+          domain: dom,
+          question: `Will ${dom} indicator ${i + 1} resolve YES?`,
+          forecastProb: Math.max(0.02, Math.min(0.98, p + drift)),
+          realized: realised,
+          daysAgo: 2 + (i % 110),
+          observed:
+            i % 3 === 0
+              ? [`${dom} datapoint A`, `${dom} datapoint B`]
+              : [`${dom} datapoint A`],
+          inferred: i % 3 === 1 ? ["model inference X", "model inference Y"] : [],
+          speculation: i % 3 === 2 ? ["narrative speculation"] : [],
+        });
+        i += 1;
+      }
+    }
+  }
+
+  await db.insert(journalEntries).values(
+    rows.map((r) => ({
+      title: r.title,
+      domain: r.domain,
+      question: r.question,
+      forecastProb: r.forecastProb,
+      horizonDays: 30,
+      observed: r.observed,
+      inferred: r.inferred,
+      speculation: r.speculation,
+      unknowns: [],
+      outcome: r.realized === 1 ? "yes" : "no",
+      outcomeProb: r.realized,
+      createdAt: new Date(now - r.daysAgo * dayMs),
+    })),
+  );
 }

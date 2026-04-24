@@ -9,6 +9,7 @@ import openclawRouter from "./openclaw";
 import riskRouter from "./risk";
 import anthropicRouter from "./anthropic";
 import agentStructuredRouter from "./agentStructured";
+import backtestRouter from "./backtest";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(openclawRouter);
 router.use(riskRouter);
 router.use(anthropicRouter);
 router.use(agentStructuredRouter);
+router.use(backtestRouter);
 
 export default router;

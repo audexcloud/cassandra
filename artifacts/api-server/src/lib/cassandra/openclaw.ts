@@ -19,6 +19,10 @@ import { eq, sql } from "drizzle-orm";
 
 import { connectors, type ConnectorResult } from "./connectors";
 import { edgeScore, kellyFraction, suggestedDirection } from "./scoring";
+import {
+  backtestRanRecently,
+  runStandardBacktests,
+} from "./backtest";
 import { logger } from "../logger";
 
 const CYCLE_INTERVAL_SEC = 60;
@@ -40,6 +44,7 @@ export const SCHEDULED_JOB_KINDS = [
   "monitor_open_positions",
   "generate_top_10_predictions",
   "generate_daily_brief",
+  "compute_calibration_backtest",
 ] as const;
 export type ScheduledJobKind = (typeof SCHEDULED_JOB_KINDS)[number];
 
@@ -403,6 +408,16 @@ async function runScheduledJobs(): Promise<void> {
       } else if (kind === "generate_daily_brief") {
         state.lastDailyBriefAt = new Date();
         message = `${kind} ok (brief generated at ${state.lastDailyBriefAt.toISOString()})`;
+      } else if (kind === "compute_calibration_backtest") {
+        // Idempotent: skip when one already ran in the last ~23h. The cycle
+        // tick is every 60s, so without this guard we'd spam the backtest
+        // tables with redundant rows.
+        if (await backtestRanRecently(23)) {
+          message = `${kind} skipped (ran within last 23h)`;
+        } else {
+          const r = await runStandardBacktests();
+          message = `${kind} ok (lookbacks=${r.ran.join(",")} scopes=${r.totalScopes})`;
+        }
       }
       await recordJobFinish(id, "ok", start, message);
     } catch (err) {
