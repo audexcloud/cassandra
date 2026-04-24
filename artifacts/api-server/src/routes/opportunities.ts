@@ -13,6 +13,7 @@ import { and, desc, eq, gte } from "drizzle-orm";
 import { weightedRandomPick } from "../lib/cassandra/scoring";
 import { generateTradePlan, type ReasoningSummary } from "../lib/cassandra/pipeline";
 import { OPPORTUNITY_STALE_AFTER_MS } from "../lib/cassandra/openclaw";
+import { parsePersistedAppliedSignals } from "../lib/cassandra/signalMatching";
 
 const STALE_AFTER_MS = OPPORTUNITY_STALE_AFTER_MS;
 const freshSince = (): Date => new Date(Date.now() - STALE_AFTER_MS);
@@ -156,6 +157,21 @@ function serializeOpportunity(o: typeof opportunities.$inferSelect) {
   const status: "active" | "stale" =
     Date.now() - o.updatedAt.getTime() < STALE_AFTER_MS ? "active" : "stale";
 
+  // Surface the structured signal-attribution that the matching layer
+  // wrote into rationale.appliedSignals (and rationale.ambientShift) so
+  // the dashboard's "What moved this prediction" section can render the
+  // matched ambient signals as structured rows. Empty array (and 0 shift)
+  // when nothing was matched — the UI hides the section in that case.
+  //
+  // We defensively shape-check each entry via the shared
+  // parsePersistedAppliedSignals helper so a malformed or
+  // partially-migrated legacy jsonb row can't cause the response to fail
+  // zod validation downstream. The dashboard route uses the same helper
+  // so its appliedSignalCount agrees with what the detail page renders.
+  const appliedSignals = parsePersistedAppliedSignals(rationale.appliedSignals);
+  const ambientShift =
+    typeof rationale.ambientShift === "number" ? rationale.ambientShift : 0;
+
   return {
     id: o.id,
     marketKey: o.marketKey,
@@ -178,6 +194,8 @@ function serializeOpportunity(o: typeof opportunities.$inferSelect) {
     tradePlan: plan,
     url: o.url,
     updatedAt: o.updatedAt.toISOString(),
+    appliedSignals,
+    ambientShift,
   };
 }
 

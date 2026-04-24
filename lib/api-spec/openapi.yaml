@@ -826,7 +826,18 @@ components:
 
     DashboardTopOpportunity:
       type: object
-      required: [id, marketKey, question, domain, source, edge, edgeScore, modelProb, marketProb]
+      required:
+        - id
+        - marketKey
+        - question
+        - domain
+        - source
+        - edge
+        - edgeScore
+        - modelProb
+        - marketProb
+        - appliedSignalCount
+        - ambientShift
       properties:
         id: { type: integer }
         marketKey: { type: string }
@@ -838,6 +849,12 @@ components:
         edgeScore: { type: number }
         modelProb: { type: number }
         marketProb: { type: number }
+        appliedSignalCount:
+          type: integer
+          description: Number of ambient signals that contributed to this prediction (0 if none matched).
+        ambientShift:
+          type: number
+          description: Net probability shift contributed by matched ambient signals (positive = pushed model up, negative = pushed model down).
 
     DashboardActiveTrade:
       type: object
@@ -990,6 +1007,59 @@ components:
         risk flag was raised and a human should adjudicate before sizing.
       enum: [trade, watch, human_review]
 
+    AppliedSignal:
+      type: object
+      description: |
+        An ambient signal that was matched to this opportunity by the
+        routing layer and contributed to `modelProb`. Surfaced so the
+        dashboard can explain *which* signals moved the prediction and in
+        which direction.
+      required:
+        - title
+        - source
+        - kind
+        - domain
+        - keywords
+        - direction
+        - sentiment
+        - impact
+        - effectiveWeight
+        - matchScore
+      properties:
+        title:
+          type: string
+          description: Headline of the underlying signal.
+        source:
+          type: string
+          description: Source connector that emitted the signal (e.g. comex, newswire).
+        kind:
+          type: string
+          description: Signal kind (e.g. price_move, news).
+        domain:
+          $ref: "#/components/schemas/Domain"
+        keywords:
+          type: array
+          items: { type: string }
+          description: Topic keywords that drove the match.
+        direction:
+          type: string
+          enum: [up, down, neutral]
+          description: |
+            Direction the signal pushes `modelProb`. `up` = toward YES,
+            `down` = toward NO, `neutral` = flat.
+        sentiment:
+          type: number
+          description: Original signal sentiment (-1..1).
+        impact:
+          type: number
+          description: Original signal impact magnitude (0..1).
+        effectiveWeight:
+          type: number
+          description: Weight applied during scoring (signal weight × match score).
+        matchScore:
+          type: number
+          description: Match score (0..1) — strength of the signal-to-market link.
+
     Opportunity:
       type: object
       properties:
@@ -1052,6 +1122,21 @@ components:
         updatedAt:
           type: string
           format: date-time
+        appliedSignals:
+          type: array
+          description: |
+            Ambient signals that were routed to this market and contributed
+            to `modelProb`. Empty when no ambient signals were matched
+            (i.e. the published edge comes purely from the connector-shaped
+            `marketProb`).
+          items:
+            $ref: "#/components/schemas/AppliedSignal"
+        ambientShift:
+          type: number
+          description: |
+            Signed shift in `modelProb` (in probability units, i.e. 0.07 =
+            +7 pts) contributed by `appliedSignals`. 0 when no ambient
+            signals were matched. Capped on the server side.
       required:
         - id
         - marketKey
@@ -1071,6 +1156,8 @@ components:
         - status
         - tradePlan
         - updatedAt
+        - appliedSignals
+        - ambientShift
 
     OpportunityDetail:
       allOf:

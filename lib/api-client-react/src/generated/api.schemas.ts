@@ -44,6 +44,10 @@ export interface DashboardTopOpportunity {
   edgeScore: number;
   modelProb: number;
   marketProb: number;
+  /** Number of ambient signals that contributed to this prediction (0 if none matched). */
+  appliedSignalCount: number;
+  /** Net probability shift contributed by matched ambient signals (positive = pushed model up, negative = pushed model down). */
+  ambientShift: number;
 }
 
 export type DashboardActiveTradeDirection =
@@ -154,6 +158,51 @@ export const RecommendedAction = {
 } as const;
 
 /**
+ * Direction the signal pushes `modelProb`. `up` = toward YES,
+`down` = toward NO, `neutral` = flat.
+
+ */
+export type AppliedSignalDirection =
+  (typeof AppliedSignalDirection)[keyof typeof AppliedSignalDirection];
+
+export const AppliedSignalDirection = {
+  up: "up",
+  down: "down",
+  neutral: "neutral",
+} as const;
+
+/**
+ * An ambient signal that was matched to this opportunity by the
+routing layer and contributed to `modelProb`. Surfaced so the
+dashboard can explain *which* signals moved the prediction and in
+which direction.
+
+ */
+export interface AppliedSignal {
+  /** Headline of the underlying signal. */
+  title: string;
+  /** Source connector that emitted the signal (e.g. comex, newswire). */
+  source: string;
+  /** Signal kind (e.g. price_move, news). */
+  kind: string;
+  domain: Domain;
+  /** Topic keywords that drove the match. */
+  keywords: string[];
+  /** Direction the signal pushes `modelProb`. `up` = toward YES,
+`down` = toward NO, `neutral` = flat.
+ */
+  direction: AppliedSignalDirection;
+  /** Original signal sentiment (-1..1). */
+  sentiment: number;
+  /** Original signal impact magnitude (0..1). */
+  impact: number;
+  /** Weight applied during scoring (signal weight × match score). */
+  effectiveWeight: number;
+  /** Match score (0..1) — strength of the signal-to-market link. */
+  matchScore: number;
+}
+
+/**
  * active = updated in the last 5 minutes; stale otherwise.
  */
 export type OpportunityStatus =
@@ -198,6 +247,17 @@ export interface Opportunity {
   tradePlan: TradePlan;
   url?: string | null;
   updatedAt: string;
+  /** Ambient signals that were routed to this market and contributed
+to `modelProb`. Empty when no ambient signals were matched
+(i.e. the published edge comes purely from the connector-shaped
+`marketProb`).
+ */
+  appliedSignals: AppliedSignal[];
+  /** Signed shift in `modelProb` (in probability units, i.e. 0.07 =
++7 pts) contributed by `appliedSignals`. 0 when no ambient
+signals were matched. Capped on the server side.
+ */
+  ambientShift: number;
 }
 
 /**

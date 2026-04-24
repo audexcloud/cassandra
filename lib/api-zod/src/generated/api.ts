@@ -67,6 +67,16 @@ export const GetDashboardSummaryResponse = zod.object({
       edgeScore: zod.number(),
       modelProb: zod.number(),
       marketProb: zod.number(),
+      appliedSignalCount: zod
+        .number()
+        .describe(
+          "Number of ambient signals that contributed to this prediction (0 if none matched).",
+        ),
+      ambientShift: zod
+        .number()
+        .describe(
+          "Net probability shift contributed by matched ambient signals (positive = pushed model up, negative = pushed model down).",
+        ),
     }),
   ),
   activeTrades: zod.array(
@@ -203,6 +213,64 @@ export const ListOpportunitiesResponseItem = zod.object({
     .describe("Concrete plan derived from the scoring pipeline."),
   url: zod.string().nullish(),
   updatedAt: zod.coerce.date(),
+  appliedSignals: zod
+    .array(
+      zod
+        .object({
+          title: zod.string().describe("Headline of the underlying signal."),
+          source: zod
+            .string()
+            .describe(
+              "Source connector that emitted the signal (e.g. comex, newswire).",
+            ),
+          kind: zod.string().describe("Signal kind (e.g. price_move, news)."),
+          domain: zod
+            .enum([
+              "prediction_market",
+              "geopolitics",
+              "policy",
+              "commodities",
+              "metals",
+              "macro",
+            ])
+            .describe("High-level intelligence domain"),
+          keywords: zod
+            .array(zod.string())
+            .describe("Topic keywords that drove the match."),
+          direction: zod
+            .enum(["up", "down", "neutral"])
+            .describe(
+              "Direction the signal pushes `modelProb`. `up` = toward YES,\n`down` = toward NO, `neutral` = flat.\n",
+            ),
+          sentiment: zod
+            .number()
+            .describe("Original signal sentiment (-1..1)."),
+          impact: zod
+            .number()
+            .describe("Original signal impact magnitude (0..1)."),
+          effectiveWeight: zod
+            .number()
+            .describe(
+              "Weight applied during scoring (signal weight × match score).",
+            ),
+          matchScore: zod
+            .number()
+            .describe(
+              "Match score (0..1) — strength of the signal-to-market link.",
+            ),
+        })
+        .describe(
+          "An ambient signal that was matched to this opportunity by the\nrouting layer and contributed to `modelProb`. Surfaced so the\ndashboard can explain \*which\* signals moved the prediction and in\nwhich direction.\n",
+        ),
+    )
+    .describe(
+      "Ambient signals that were routed to this market and contributed\nto `modelProb`. Empty when no ambient signals were matched\n(i.e. the published edge comes purely from the connector-shaped\n`marketProb`).\n",
+    ),
+  ambientShift: zod
+    .number()
+    .describe(
+      "Signed shift in `modelProb` (in probability units, i.e. 0.07 =\n+7 pts) contributed by `appliedSignals`. 0 when no ambient\nsignals were matched. Capped on the server side.\n",
+    ),
 });
 export const ListOpportunitiesResponse = zod.array(
   ListOpportunitiesResponseItem,
@@ -283,6 +351,64 @@ export const ListTopOpportunitiesResponseItem = zod.object({
     .describe("Concrete plan derived from the scoring pipeline."),
   url: zod.string().nullish(),
   updatedAt: zod.coerce.date(),
+  appliedSignals: zod
+    .array(
+      zod
+        .object({
+          title: zod.string().describe("Headline of the underlying signal."),
+          source: zod
+            .string()
+            .describe(
+              "Source connector that emitted the signal (e.g. comex, newswire).",
+            ),
+          kind: zod.string().describe("Signal kind (e.g. price_move, news)."),
+          domain: zod
+            .enum([
+              "prediction_market",
+              "geopolitics",
+              "policy",
+              "commodities",
+              "metals",
+              "macro",
+            ])
+            .describe("High-level intelligence domain"),
+          keywords: zod
+            .array(zod.string())
+            .describe("Topic keywords that drove the match."),
+          direction: zod
+            .enum(["up", "down", "neutral"])
+            .describe(
+              "Direction the signal pushes `modelProb`. `up` = toward YES,\n`down` = toward NO, `neutral` = flat.\n",
+            ),
+          sentiment: zod
+            .number()
+            .describe("Original signal sentiment (-1..1)."),
+          impact: zod
+            .number()
+            .describe("Original signal impact magnitude (0..1)."),
+          effectiveWeight: zod
+            .number()
+            .describe(
+              "Weight applied during scoring (signal weight × match score).",
+            ),
+          matchScore: zod
+            .number()
+            .describe(
+              "Match score (0..1) — strength of the signal-to-market link.",
+            ),
+        })
+        .describe(
+          "An ambient signal that was matched to this opportunity by the\nrouting layer and contributed to `modelProb`. Surfaced so the\ndashboard can explain \*which\* signals moved the prediction and in\nwhich direction.\n",
+        ),
+    )
+    .describe(
+      "Ambient signals that were routed to this market and contributed\nto `modelProb`. Empty when no ambient signals were matched\n(i.e. the published edge comes purely from the connector-shaped\n`marketProb`).\n",
+    ),
+  ambientShift: zod
+    .number()
+    .describe(
+      "Signed shift in `modelProb` (in probability units, i.e. 0.07 =\n+7 pts) contributed by `appliedSignals`. 0 when no ambient\nsignals were matched. Capped on the server side.\n",
+    ),
 });
 export const ListTopOpportunitiesResponse = zod.array(
   ListTopOpportunitiesResponseItem,
@@ -363,6 +489,64 @@ export const GetRandomOpportunityResponse = zod.object({
     .describe("Concrete plan derived from the scoring pipeline."),
   url: zod.string().nullish(),
   updatedAt: zod.coerce.date(),
+  appliedSignals: zod
+    .array(
+      zod
+        .object({
+          title: zod.string().describe("Headline of the underlying signal."),
+          source: zod
+            .string()
+            .describe(
+              "Source connector that emitted the signal (e.g. comex, newswire).",
+            ),
+          kind: zod.string().describe("Signal kind (e.g. price_move, news)."),
+          domain: zod
+            .enum([
+              "prediction_market",
+              "geopolitics",
+              "policy",
+              "commodities",
+              "metals",
+              "macro",
+            ])
+            .describe("High-level intelligence domain"),
+          keywords: zod
+            .array(zod.string())
+            .describe("Topic keywords that drove the match."),
+          direction: zod
+            .enum(["up", "down", "neutral"])
+            .describe(
+              "Direction the signal pushes `modelProb`. `up` = toward YES,\n`down` = toward NO, `neutral` = flat.\n",
+            ),
+          sentiment: zod
+            .number()
+            .describe("Original signal sentiment (-1..1)."),
+          impact: zod
+            .number()
+            .describe("Original signal impact magnitude (0..1)."),
+          effectiveWeight: zod
+            .number()
+            .describe(
+              "Weight applied during scoring (signal weight × match score).",
+            ),
+          matchScore: zod
+            .number()
+            .describe(
+              "Match score (0..1) — strength of the signal-to-market link.",
+            ),
+        })
+        .describe(
+          "An ambient signal that was matched to this opportunity by the\nrouting layer and contributed to `modelProb`. Surfaced so the\ndashboard can explain \*which\* signals moved the prediction and in\nwhich direction.\n",
+        ),
+    )
+    .describe(
+      "Ambient signals that were routed to this market and contributed\nto `modelProb`. Empty when no ambient signals were matched\n(i.e. the published edge comes purely from the connector-shaped\n`marketProb`).\n",
+    ),
+  ambientShift: zod
+    .number()
+    .describe(
+      "Signed shift in `modelProb` (in probability units, i.e. 0.07 =\n+7 pts) contributed by `appliedSignals`. 0 when no ambient\nsignals were matched. Capped on the server side.\n",
+    ),
 });
 
 /**
@@ -445,6 +629,64 @@ export const GetOpportunityResponse = zod
       .describe("Concrete plan derived from the scoring pipeline."),
     url: zod.string().nullish(),
     updatedAt: zod.coerce.date(),
+    appliedSignals: zod
+      .array(
+        zod
+          .object({
+            title: zod.string().describe("Headline of the underlying signal."),
+            source: zod
+              .string()
+              .describe(
+                "Source connector that emitted the signal (e.g. comex, newswire).",
+              ),
+            kind: zod.string().describe("Signal kind (e.g. price_move, news)."),
+            domain: zod
+              .enum([
+                "prediction_market",
+                "geopolitics",
+                "policy",
+                "commodities",
+                "metals",
+                "macro",
+              ])
+              .describe("High-level intelligence domain"),
+            keywords: zod
+              .array(zod.string())
+              .describe("Topic keywords that drove the match."),
+            direction: zod
+              .enum(["up", "down", "neutral"])
+              .describe(
+                "Direction the signal pushes `modelProb`. `up` = toward YES,\n`down` = toward NO, `neutral` = flat.\n",
+              ),
+            sentiment: zod
+              .number()
+              .describe("Original signal sentiment (-1..1)."),
+            impact: zod
+              .number()
+              .describe("Original signal impact magnitude (0..1)."),
+            effectiveWeight: zod
+              .number()
+              .describe(
+                "Weight applied during scoring (signal weight × match score).",
+              ),
+            matchScore: zod
+              .number()
+              .describe(
+                "Match score (0..1) — strength of the signal-to-market link.",
+              ),
+          })
+          .describe(
+            "An ambient signal that was matched to this opportunity by the\nrouting layer and contributed to `modelProb`. Surfaced so the\ndashboard can explain \*which\* signals moved the prediction and in\nwhich direction.\n",
+          ),
+      )
+      .describe(
+        "Ambient signals that were routed to this market and contributed\nto `modelProb`. Empty when no ambient signals were matched\n(i.e. the published edge comes purely from the connector-shaped\n`marketProb`).\n",
+      ),
+    ambientShift: zod
+      .number()
+      .describe(
+        "Signed shift in `modelProb` (in probability units, i.e. 0.07 =\n+7 pts) contributed by `appliedSignals`. 0 when no ambient\nsignals were matched. Capped on the server side.\n",
+      ),
   })
   .and(
     zod.object({

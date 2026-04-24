@@ -28,6 +28,7 @@ import {
   applyMatchedSignals,
   buildMatchRationale,
   matchSignalsToMarket,
+  summarizeAppliedSignals,
 } from "./signalMatching";
 import {
   backtestRanRecently,
@@ -212,6 +213,12 @@ async function ingestConnector(
 
     // Augment the connector's rationale with attribution for any matched
     // ambient signals, so the dashboard explains *why* modelProb moved.
+    // We persist both:
+    //  - prose lines (`observed` / `inferred`) for the legacy rationale
+    //    buckets and any text-based readers, AND
+    //  - a structured `appliedSignals` array (+ `ambientShift`) so the
+    //    dashboard's "What moved this prediction" section can render
+    //    chips/rows directly without re-parsing the prose.
     const matchExtras = buildMatchRationale({
       matched,
       marketProb: market.marketProb,
@@ -225,6 +232,8 @@ async function ingestConnector(
             ...market.rationale,
             observed: [...market.rationale.observed, ...matchExtras.observed],
             inferred: [...market.rationale.inferred, ...matchExtras.inferred],
+            appliedSignals: summarizeAppliedSignals(matched),
+            ambientShift,
           }
         : market.rationale;
 

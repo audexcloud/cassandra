@@ -11,6 +11,8 @@ export * from "./anthropicConversationWithMessages";
 export * from "./anthropicError";
 export * from "./anthropicMessage";
 export * from "./apiError";
+export * from "./appliedSignal";
+export * from "./appliedSignalDirection";
 export * from "./backtestCalibration";
 export * from "./backtestCalibrationBucket";
 export * from "./backtestCalibrationLookbackDays";

@@ -17,4 +17,8 @@ export interface DashboardTopOpportunity {
   edgeScore: number;
   modelProb: number;
   marketProb: number;
+  /** Number of ambient signals that contributed to this prediction (0 if none matched). */
+  appliedSignalCount: number;
+  /** Net probability shift contributed by matched ambient signals (positive = pushed model up, negative = pushed model down). */
+  ambientShift: number;
 }

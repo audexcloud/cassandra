@@ -4,6 +4,7 @@ import {
   buildMatchRationale,
   matchSignalsToMarket,
   MAX_AMBIENT_SHIFT,
+  summarizeAppliedSignals,
 } from "./signalMatching";
 import { DEFAULT_AMBIENT_SHIFT_CAPS } from "./signalCapTuning";
 import type { ConnectorMarket, ConnectorSignal } from "./connectors";
@@ -42,6 +43,7 @@ describe("matchSignalsToMarket", () => {
     expect(matched[0].matchScore).toBe(0.6);
     expect(matched[0].matchReason).toContain("metals");
     expect(matched[0].matchReason).toContain("gold");
+    expect(matched[0].sharedKeywords).toContain("gold");
   });
 
   it("matches keyword-only when domains differ", () => {
@@ -500,5 +502,51 @@ describe("buildMatchRationale", () => {
     });
     expect(out.inferred[0]).toContain("down");
     expect(out.inferred[0]).toContain("8.0 pts");
+  });
+});
+
+describe("summarizeAppliedSignals", () => {
+  it("returns an empty array for no matches", () => {
+    expect(summarizeAppliedSignals([])).toEqual([]);
+  });
+
+  it("projects matched signals into a UI-friendly shape with direction and keywords", () => {
+    const matched = matchSignalsToMarket(makeMarket(), [
+      makeAmbient({ sentiment: 0.6, impact: 0.7, weight: 0.8 }),
+      makeAmbient({
+        sentiment: -0.4,
+        impact: 0.5,
+        weight: 0.6,
+        title: "Gold sells off on dollar strength",
+      }),
+    ]);
+    const summary = summarizeAppliedSignals(matched);
+    expect(summary).toHaveLength(2);
+    // First matched signal — positive sentiment -> "up"
+    expect(summary[0]).toMatchObject({
+      title: "Gold up 2.0% this week",
+      source: "comex",
+      kind: "price_move",
+      domain: "metals",
+      direction: "up",
+      sentiment: 0.6,
+      impact: 0.7,
+      matchScore: 0.6,
+    });
+    expect(summary[0].keywords).toContain("gold");
+    // effectiveWeight = signal.weight * matchScore = 0.8 * 0.6
+    expect(summary[0].effectiveWeight).toBeCloseTo(0.48, 5);
+    // Second matched signal — negative sentiment -> "down"
+    expect(summary[1].direction).toBe("down");
+    expect(summary[1].title).toBe("Gold sells off on dollar strength");
+  });
+
+  it("marks zero-sentiment signals as neutral", () => {
+    const matched = matchSignalsToMarket(makeMarket(), [
+      makeAmbient({ sentiment: 0 }),
+    ]);
+    const summary = summarizeAppliedSignals(matched);
+    expect(summary).toHaveLength(1);
+    expect(summary[0].direction).toBe("neutral");
   });
 });

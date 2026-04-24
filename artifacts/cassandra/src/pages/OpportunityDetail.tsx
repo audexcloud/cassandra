@@ -3,7 +3,7 @@ import { Link, useParams } from "wouter";
 import { formatPercent, formatCurrency, formatDateTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertTriangle, ArrowLeft, ExternalLink, Activity, Info, ShieldAlert, LineChart, Hand, Target, Eye, ArrowUpRight } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ExternalLink, Activity, Info, ShieldAlert, LineChart, Hand, Target, Eye, ArrowUpRight, ArrowDownRight, Minus, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -245,6 +245,126 @@ export default function OpportunityDetail() {
           </CardContent>
         </Card>
       </div>
+
+      {/* "What moved this prediction" — explains the edge by listing the
+          ambient signals the matching layer routed to this market and how
+          far they shifted modelProb. Hidden when no ambient signals were
+          matched (i.e. the published edge comes purely from marketProb). */}
+      {opp.appliedSignals && opp.appliedSignals.length > 0 && (
+        <Card
+          className="bg-card/50 border-primary/30"
+          data-testid="opportunity-applied-signals"
+        >
+          <CardHeader className="pb-2 border-b border-border/50">
+            <CardTitle className="text-sm font-bold uppercase tracking-wider flex items-center text-primary">
+              <Zap className="h-4 w-4 mr-2" /> What Moved This Prediction
+              <span className="ml-auto flex items-center gap-3 font-mono text-xs normal-case tracking-normal text-muted-foreground">
+                <span>
+                  Market{" "}
+                  <span className="text-foreground">
+                    {formatPercent(opp.marketProb)}
+                  </span>
+                </span>
+                <span className="text-muted-foreground">→</span>
+                <span>
+                  Model{" "}
+                  <span className="text-primary font-bold">
+                    {formatPercent(opp.modelProb)}
+                  </span>
+                </span>
+                {(() => {
+                  const shift = opp.ambientShift ?? 0;
+                  const pts = Math.abs(shift * 100);
+                  const sign = shift > 0 ? "+" : shift < 0 ? "−" : "±";
+                  const cls =
+                    shift > 0
+                      ? "text-emerald-500"
+                      : shift < 0
+                        ? "text-destructive"
+                        : "text-muted-foreground";
+                  return (
+                    <Badge
+                      variant="outline"
+                      className={`uppercase text-[10px] tracking-wider rounded-sm border-current ${cls}`}
+                      data-testid="applied-signals-shift-summary"
+                    >
+                      {sign}
+                      {pts.toFixed(1)} pts from {opp.appliedSignals!.length} signal
+                      {opp.appliedSignals!.length === 1 ? "" : "s"}
+                    </Badge>
+                  );
+                })()}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0 divide-y divide-border/30">
+            {opp.appliedSignals.map((s, i) => {
+              const DirIcon =
+                s.direction === "up"
+                  ? ArrowUpRight
+                  : s.direction === "down"
+                    ? ArrowDownRight
+                    : Minus;
+              const dirCls =
+                s.direction === "up"
+                  ? "text-emerald-500 border-emerald-500/40 bg-emerald-500/5"
+                  : s.direction === "down"
+                    ? "text-destructive border-destructive/40 bg-destructive/5"
+                    : "text-muted-foreground border-muted-foreground/30 bg-muted/20";
+              const dirLabel =
+                s.direction === "up"
+                  ? "Pushes toward YES"
+                  : s.direction === "down"
+                    ? "Pushes toward NO"
+                    : "Neutral";
+              return (
+                <div
+                  key={`${s.source}-${s.title}-${i}`}
+                  className="flex items-start gap-3 p-3"
+                  data-testid="applied-signal-row"
+                >
+                  <Badge
+                    variant="outline"
+                    className={`uppercase text-[10px] tracking-wider rounded-sm shrink-0 ${dirCls}`}
+                    title={dirLabel}
+                  >
+                    <DirIcon className="w-3 h-3 mr-1" />
+                    {s.direction}
+                  </Badge>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-foreground line-clamp-2">
+                      {s.title}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground font-mono">
+                      <span className="uppercase tracking-wider">
+                        {s.source}
+                      </span>
+                      <span className="uppercase tracking-wider">
+                        {s.kind}
+                      </span>
+                      <span>impact {s.impact.toFixed(2)}</span>
+                      <span>weight {s.effectiveWeight.toFixed(2)}</span>
+                    </div>
+                    {s.keywords.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {s.keywords.map((kw) => (
+                          <Badge
+                            key={kw}
+                            variant="outline"
+                            className="text-[10px] uppercase tracking-wider rounded-sm border-border/60 text-muted-foreground"
+                          >
+                            {kw}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 pt-4">
         <div className="lg:col-span-2 space-y-6">

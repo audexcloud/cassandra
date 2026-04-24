@@ -12,6 +12,7 @@ import {
 import { sql, gte, eq, inArray, desc } from "drizzle-orm";
 import { openClawSnapshot, OPPORTUNITY_STALE_AFTER_MS } from "../lib/cassandra/openclaw";
 import { priceForSide } from "../lib/cassandra/scoring";
+import { parsePersistedAppliedSignals } from "../lib/cassandra/signalMatching";
 
 const router: IRouter = Router();
 
@@ -127,6 +128,10 @@ router.get("/dashboard/summary", async (_req, res) => {
           edgeScore: opportunities.edgeScore,
           modelProb: opportunities.modelProb,
           marketProb: opportunities.marketProb,
+          // Pull rationale so we can surface signal-attribution at-a-glance
+          // on the dashboard cards (count + numeric ambient shift) without
+          // a second round-trip per row.
+          rationale: opportunities.rationale,
         })
         .from(opportunities)
         .where(gte(opportunities.updatedAt, freshOppCutoff))
@@ -235,7 +240,35 @@ router.get("/dashboard/summary", async (_req, res) => {
     // Hard-pinned to false in this build regardless of any DB value.
     liveExecutionEnabled: false,
     lastCycleAt: snapshot.lastCycleAt ? snapshot.lastCycleAt.toISOString() : null,
-    topOpportunities: topOppRows,
+    topOpportunities: topOppRows.map((o) => {
+      // Rationale is jsonb; the new attribution fields land there when
+      // openclaw matches ambient signals to a market. Use the same shape
+      // guard as the opportunity detail serializer so the count we show
+      // here matches the rows the UI will actually render on drill-in
+      // (malformed/legacy entries are dropped, not counted).
+      const r = (o.rationale ?? {}) as {
+        appliedSignals?: unknown;
+        ambientShift?: unknown;
+      };
+      const appliedSignalCount = parsePersistedAppliedSignals(
+        r.appliedSignals,
+      ).length;
+      const ambientShift =
+        typeof r.ambientShift === "number" ? r.ambientShift : 0;
+      return {
+        id: o.id,
+        marketKey: o.marketKey,
+        question: o.question,
+        domain: o.domain,
+        source: o.source,
+        edge: o.edge,
+        edgeScore: o.edgeScore,
+        modelProb: o.modelProb,
+        marketProb: o.marketProb,
+        appliedSignalCount,
+        ambientShift,
+      };
+    }),
     activeTrades,
     alerts,
     agentStatus: {

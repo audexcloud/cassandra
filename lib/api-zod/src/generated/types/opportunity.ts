@@ -5,6 +5,7 @@
  * Cassandra — personal predictive intelligence terminal API
  * OpenAPI spec version: 0.1.0
  */
+import type { AppliedSignal } from "./appliedSignal";
 import type { Direction } from "./direction";
 import type { Domain } from "./domain";
 import type { OpportunityStatus } from "./opportunityStatus";
@@ -45,4 +46,15 @@ export interface Opportunity {
   tradePlan: TradePlan;
   url?: string | null;
   updatedAt: Date;
+  /** Ambient signals that were routed to this market and contributed
+to `modelProb`. Empty when no ambient signals were matched
+(i.e. the published edge comes purely from the connector-shaped
+`marketProb`).
+ */
+  appliedSignals: AppliedSignal[];
+  /** Signed shift in `modelProb` (in probability units, i.e. 0.07 =
++7 pts) contributed by `appliedSignals`. 0 when no ambient
+signals were matched. Capped on the server side.
+ */
+  ambientShift: number;
 }

@@ -272,6 +272,21 @@ export interface ReasoningSummary {
   speculation: string[];
   unknowns: string[];
   riskFlags: string[];
+  /**
+   * Ambient signals that were routed to this opportunity by the matching
+   * layer and contributed to `modelProb`. Persisted alongside the prose
+   * rationale so the dashboard can render a structured "What moved this
+   * prediction" panel without re-parsing rationale strings. Optional —
+   * absent on legacy rows produced before the matching layer was added,
+   * and on opportunities for which no ambient signal was matched.
+   */
+  appliedSignals?: import("./signalMatching").AppliedSignalSummary[];
+  /**
+   * Signed shift in `modelProb` (probability units) contributed by
+   * `appliedSignals` in the most recent ingest cycle. 0 / absent when no
+   * ambient signals were matched.
+   */
+  ambientShift?: number;
 }
 
 export function generateReasoningSummary(

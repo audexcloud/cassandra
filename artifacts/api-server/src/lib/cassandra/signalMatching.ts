@@ -15,7 +15,7 @@
  * plus keyword overlap. The result includes a human-readable `matchReason`
  * so the dashboard can show *why* a particular signal was applied.
  */
-import type { ConnectorMarket, ConnectorSignal } from "./connectors";
+import type { ConnectorDomain, ConnectorMarket, ConnectorSignal } from "./connectors";
 import { aggregateModelProb, clamp, clamp01, type RawSignal } from "./scoring";
 import {
   FALLBACK_AMBIENT_SHIFT,
@@ -155,6 +155,131 @@ export interface MatchedSignal {
   /** 0..1 multiplier applied to the signal's underlying weight. */
   matchScore: number;
   matchReason: string;
+  /**
+   * The topic keywords that overlapped between the market's question and
+   * the signal's title/body — surfaced explicitly (alongside the prose
+   * `matchReason`) so the UI can render them as structured chips without
+   * re-parsing the reason string.
+   */
+  sharedKeywords: string[];
+}
+
+/**
+ * Compact, serializable view of a matched ambient signal — the shape
+ * persisted into the opportunity rationale jsonb and surfaced on the API
+ * so the dashboard's "What moved this prediction" section can render the
+ * matched signals as structured rows (no string parsing required).
+ */
+export interface AppliedSignalSummary {
+  /** Headline of the underlying signal. */
+  title: string;
+  /** Source connector that emitted the signal (e.g. "comex", "newswire"). */
+  source: string;
+  /** Signal kind (e.g. "price_move", "news"). */
+  kind: string;
+  /** Signal's domain. */
+  domain: ConnectorDomain;
+  /** Topic keywords that drove the match. */
+  keywords: string[];
+  /**
+   * Human-readable direction of the contribution: "up" pushes modelProb
+   * toward YES, "down" toward NO, "neutral" if the signal was flat.
+   */
+  direction: "up" | "down" | "neutral";
+  /** Original signal sentiment (-1..1). */
+  sentiment: number;
+  /** Original signal impact magnitude (0..1). */
+  impact: number;
+  /** Effective weight applied to scoring (signal.weight × matchScore). */
+  effectiveWeight: number;
+  /** Match score (0..1) — how strongly the signal was tied to the market. */
+  matchScore: number;
+}
+
+/** Domains we accept on a persisted appliedSignal entry — must stay in
+ *  sync with the OpenAPI `Domain` enum and `ConnectorDomain` type. */
+const APPLIED_SIGNAL_DOMAINS: ReadonlySet<ConnectorDomain> = new Set<ConnectorDomain>([
+  "prediction_market",
+  "geopolitics",
+  "policy",
+  "commodities",
+  "metals",
+  "macro",
+]);
+
+/**
+ * Defensively parse a persisted `rationale.appliedSignals` jsonb value into
+ * a strongly-typed `AppliedSignalSummary[]`. Used by both the opportunity
+ * detail serializer and the dashboard summary route so they agree on what
+ * counts as a valid attribution row — and so a malformed/legacy entry
+ * cannot fail downstream zod response validation.
+ *
+ * Entries with the wrong shape, an unknown domain, or a non-up/down/neutral
+ * direction are silently dropped. Non-string keywords on an otherwise valid
+ * entry are filtered out rather than rejecting the whole row.
+ */
+export function parsePersistedAppliedSignals(input: unknown): AppliedSignalSummary[] {
+  if (!Array.isArray(input)) return [];
+  const out: AppliedSignalSummary[] = [];
+  for (const entry of input) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    if (
+      typeof e.title !== "string" ||
+      typeof e.source !== "string" ||
+      typeof e.kind !== "string" ||
+      typeof e.domain !== "string" ||
+      !APPLIED_SIGNAL_DOMAINS.has(e.domain as ConnectorDomain) ||
+      (e.direction !== "up" && e.direction !== "down" && e.direction !== "neutral") ||
+      typeof e.sentiment !== "number" ||
+      typeof e.impact !== "number" ||
+      typeof e.effectiveWeight !== "number" ||
+      typeof e.matchScore !== "number" ||
+      !Array.isArray(e.keywords)
+    ) {
+      continue;
+    }
+    out.push({
+      title: e.title,
+      source: e.source,
+      kind: e.kind,
+      domain: e.domain as ConnectorDomain,
+      keywords: e.keywords.filter((k): k is string => typeof k === "string"),
+      direction: e.direction,
+      sentiment: e.sentiment,
+      impact: e.impact,
+      effectiveWeight: e.effectiveWeight,
+      matchScore: e.matchScore,
+    });
+  }
+  return out;
+}
+
+/**
+ * Convert the internal `MatchedSignal[]` (which carries a full
+ * `ConnectorSignal` reference) into the compact `AppliedSignalSummary[]`
+ * shape suitable for storage in the opportunity rationale jsonb and for
+ * direct serialization on the opportunity API. Order is preserved.
+ */
+export function summarizeAppliedSignals(
+  matched: MatchedSignal[],
+): AppliedSignalSummary[] {
+  return matched.map((m) => {
+    const direction: "up" | "down" | "neutral" =
+      m.signal.sentiment > 0 ? "up" : m.signal.sentiment < 0 ? "down" : "neutral";
+    return {
+      title: m.signal.title,
+      source: m.signal.source,
+      kind: m.signal.kind,
+      domain: m.signal.domain,
+      keywords: m.sharedKeywords,
+      direction,
+      sentiment: m.signal.sentiment,
+      impact: m.signal.impact,
+      effectiveWeight: clamp01((m.signal.weight ?? 0.5) * m.matchScore),
+      matchScore: m.matchScore,
+    };
+  });
 }
 
 /** Find topic keywords that appear in the given text (case-insensitive,
@@ -245,7 +370,12 @@ export function matchSignalsToMarket(
       continue;
     }
 
-    matched.push({ signal, matchScore, matchReason });
+    matched.push({
+      signal,
+      matchScore,
+      matchReason,
+      sharedKeywords: sharedKeywords.slice(0, 3),
+    });
   }
 
   // Stable order by descending match score, then by descending impact —

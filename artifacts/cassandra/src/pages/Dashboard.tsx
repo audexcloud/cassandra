@@ -1,6 +1,6 @@
 import { useGetDashboardSummary, useGetBacktestSummary } from "@workspace/api-client-react";
 import { formatCurrency, formatPercent, formatCompactNumber, formatDateTime } from "@/lib/format";
-import { AlertTriangle, Activity, Target, TrendingUp, ShieldAlert, BarChart3, PieChart, Bell, LineChart, Shuffle, Bot, Gauge } from "lucide-react";
+import { AlertTriangle, Activity, Target, TrendingUp, ShieldAlert, BarChart3, PieChart, Bell, LineChart, Shuffle, Bot, Gauge, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -211,24 +211,52 @@ export default function Dashboard() {
           <CardContent className="p-0">
             {summary.topOpportunities && summary.topOpportunities.length > 0 ? (
               <div className="divide-y divide-border/30">
-                {summary.topOpportunities.slice(0, 5).map((o) => (
-                  <Link
-                    key={o.id}
-                    href={`/opportunities/${o.id}`}
-                    className="flex items-center gap-3 p-3 text-sm hover:bg-secondary/30 transition-colors"
-                  >
-                    <Badge variant="outline" className="uppercase text-[10px] tracking-wider shrink-0">
-                      {o.domain.replace('_', ' ')}
-                    </Badge>
-                    <span className="line-clamp-1 flex-1 font-medium">{o.question}</span>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {formatPercent(o.modelProb)} vs {formatPercent(o.marketProb)}
-                    </span>
-                    <span className={`font-mono text-xs font-bold ${o.edge > 0 ? "text-emerald-500" : "text-destructive"}`}>
-                      {o.edge > 0 ? "+" : ""}{formatPercent(o.edge)}
-                    </span>
-                  </Link>
-                ))}
+                {summary.topOpportunities.slice(0, 5).map((o) => {
+                  // Surface signal attribution inline so the operator can see
+                  // which top picks were driven by ambient signals — and by
+                  // how much — without clicking through to the detail page.
+                  const hasShift = o.appliedSignalCount > 0;
+                  const shiftPts = o.ambientShift * 100;
+                  const shiftSign = shiftPts >= 0 ? "+" : "";
+                  const shiftClass =
+                    shiftPts > 0
+                      ? "text-emerald-400 border-emerald-500/40 bg-emerald-500/5"
+                      : shiftPts < 0
+                        ? "text-red-400 border-red-500/40 bg-red-500/5"
+                        : "text-muted-foreground border-border/40";
+                  return (
+                    <Link
+                      key={o.id}
+                      href={`/opportunities/${o.id}`}
+                      className="flex flex-col gap-1.5 p-3 text-sm hover:bg-secondary/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Badge variant="outline" className="uppercase text-[10px] tracking-wider shrink-0">
+                          {o.domain.replace('_', ' ')}
+                        </Badge>
+                        <span className="line-clamp-1 flex-1 font-medium">{o.question}</span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {formatPercent(o.modelProb)} vs {formatPercent(o.marketProb)}
+                        </span>
+                        <span className={`font-mono text-xs font-bold ${o.edge > 0 ? "text-emerald-500" : "text-destructive"}`}>
+                          {o.edge > 0 ? "+" : ""}{formatPercent(o.edge)}
+                        </span>
+                      </div>
+                      {hasShift ? (
+                        <div className="flex items-center gap-2 pl-[64px]">
+                          <Badge
+                            variant="outline"
+                            className={`text-[10px] uppercase tracking-wider font-mono gap-1 ${shiftClass}`}
+                            data-testid={`badge-applied-signals-${o.id}`}
+                          >
+                            <Zap className="h-3 w-3" />
+                            {shiftSign}{shiftPts.toFixed(1)} pts from {o.appliedSignalCount} signal{o.appliedSignalCount === 1 ? "" : "s"}
+                          </Badge>
+                        </div>
+                      ) : null}
+                    </Link>
+                  );
+                })}
               </div>
             ) : (
               <div className="p-6 text-center text-sm text-muted-foreground">
