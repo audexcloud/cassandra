@@ -311,15 +311,18 @@ export function generateCashOutLadder(
   direction: "yes" | "no",
   steps = 3,
 ): Array<{ price: number; fraction: number }> {
-  // For YES: ladder upward to 1; for NO: ladder downward (in marketProb).
-  // Each rung scales out an even fraction.
+  // The ladder represents the *side price* the trader expects to scale out
+  // at. For YES, the side price climbs toward 1 as the market converges to
+  // the thesis. For NO, the *yes-leg market price* falls toward 0; we
+  // express the ladder in side-price terms, so for the NO branch we step
+  // entryProb down toward 0.01. Each rung scales out an even fraction.
   const fraction = Number((1 / (steps + 1)).toFixed(2));
   const ladder: Array<{ price: number; fraction: number }> = [];
   for (let i = 1; i <= steps; i++) {
     const target =
       direction === "yes"
-        ? clamp(entryProb + i * (1 - entryProb) / (steps + 1), 0.01, 0.99)
-        : clamp(entryProb + i * (1 - entryProb) / (steps + 1), 0.01, 0.99);
+        ? clamp(entryProb + (i * (1 - entryProb)) / (steps + 1), 0.01, 0.99)
+        : clamp(entryProb - (i * entryProb) / (steps + 1), 0.01, 0.99);
     ladder.push({ price: Number(target.toFixed(3)), fraction });
   }
   return ladder;

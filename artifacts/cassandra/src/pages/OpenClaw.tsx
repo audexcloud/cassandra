@@ -11,13 +11,22 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getGetOpenClawStatusQueryKey, getListOpenClawJobsQueryKey } from "@workspace/api-client-react";
 
 export default function OpenClaw() {
-  const { data: status, isLoading: isStatusLoading } = useGetOpenClawStatus(undefined, {
-    query: { refetchInterval: 5000 } // Poll every 5s for orchestration UI
+  const { data: status, isLoading: isStatusLoading } = useGetOpenClawStatus({
+    query: {
+      queryKey: getGetOpenClawStatusQueryKey(),
+      refetchInterval: 5000, // Poll every 5s for orchestration UI
+    },
   });
-  
-  const { data: jobs, isLoading: isJobsLoading } = useListOpenClawJobs({ limit: 50 }, {
-    query: { refetchInterval: 5000 }
-  });
+
+  const { data: jobs, isLoading: isJobsLoading } = useListOpenClawJobs(
+    { limit: 50 },
+    {
+      query: {
+        queryKey: getListOpenClawJobsQueryKey({ limit: 50 }),
+        refetchInterval: 5000,
+      },
+    },
+  );
   
   const runCycleMutation = useRunOpenClawCycle();
   const { toast } = useToast();

@@ -9,7 +9,7 @@ import {
   AnthropicConversation
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getListAnthropicMessagesQueryKey, getListAnthropicConversationsQueryKey } from "@workspace/api-client-react";
+import { getListAnthropicMessagesQueryKey, getListAnthropicConversationsQueryKey, getGetAnthropicConversationQueryKey } from "@workspace/api-client-react";
 import { MessageSquare, Plus, Trash2, Send, Bot, User, TerminalSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,10 @@ export default function Agent() {
   // Queries
   const { data: convos, isLoading: isLoadingConvos } = useListAnthropicConversations();
   const { data: messages, isLoading: isLoadingMessages } = useListAnthropicMessages(activeId || 0, {
-    query: { enabled: !!activeId }
+    query: {
+      queryKey: getListAnthropicMessagesQueryKey(activeId || 0),
+      enabled: !!activeId,
+    },
   });
 
   // Mutations

@@ -5,7 +5,7 @@ import {
   UpdateRiskConfigResponse,
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
-import { riskConfig, auditLog } from "@workspace/db";
+import { riskConfig, auditLog, killSwitchEvents } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -68,6 +68,26 @@ router.patch("/risk/config", async (req, res) => {
     target: `risk_config:${existing.id}`,
     payload: parsed.data,
   });
+
+  // Kill-switch toggles are safety-critical: write a dedicated
+  // kill_switch_events row whenever the engaged flag flips. The audit
+  // log captures *all* config edits, but operators (and any future
+  // calibration tooling) need a clean, filterable history of just the
+  // kill-switch state changes with the toggling actor and reason.
+  const newEngaged =
+    parsed.data.killSwitchEngaged ?? existing.killSwitchEngaged;
+  if (newEngaged !== existing.killSwitchEngaged) {
+    await db.insert(killSwitchEvents).values({
+      engaged: newEngaged,
+      actor: "user",
+      reason:
+        typeof (parsed.data as { reason?: unknown }).reason === "string"
+          ? ((parsed.data as { reason?: string }).reason as string)
+          : newEngaged
+            ? "Manual kill switch engaged via /risk/config."
+            : "Manual kill switch disengaged via /risk/config.",
+    });
+  }
 
   res.json(UpdateRiskConfigResponse.parse(serialize(updated)));
 });

@@ -201,6 +201,21 @@ describe("trade plan generation", () => {
   it("ladder length matches steps", () => {
     expect(generateCashOutLadder(0.5, "yes", 4)).toHaveLength(4);
   });
+  it("yes ladder steps upward toward 1", () => {
+    const ladder = generateCashOutLadder(0.4, "yes", 3);
+    expect(ladder[0].price).toBeGreaterThan(0.4);
+    for (let i = 1; i < ladder.length; i++) {
+      expect(ladder[i].price).toBeGreaterThan(ladder[i - 1].price);
+    }
+  });
+  it("no ladder steps downward toward 0", () => {
+    const ladder = generateCashOutLadder(0.6, "no", 3);
+    expect(ladder[0].price).toBeLessThan(0.6);
+    for (let i = 1; i < ladder.length; i++) {
+      expect(ladder[i].price).toBeLessThan(ladder[i - 1].price);
+    }
+    for (const rung of ladder) expect(rung.price).toBeGreaterThanOrEqual(0.01);
+  });
   it("exit strategy mentions cut threshold", () => {
     const s = generateExitStrategy({ direction: "yes", entryZone: { low: 0.3, high: 0.4 } });
     expect(s.length).toBeGreaterThan(0);
