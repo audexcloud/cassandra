@@ -9,6 +9,7 @@ import { Radio, RefreshCw, Server, AlertCircle, PlaySquare, ShieldAlert, CheckCi
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetOpenClawStatusQueryKey, getListOpenClawJobsQueryKey } from "@workspace/api-client-react";
+import { ConnectorSetupCard } from "@/components/openclaw/ConnectorSetupCard";
 
 export default function OpenClaw() {
   const { data: status, isLoading: isStatusLoading } = useGetOpenClawStatus({
@@ -109,6 +110,8 @@ export default function OpenClaw() {
           )}
         </Button>
       </div>
+
+      <ConnectorSetupCard connectors={status.connectors} />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="space-y-6">
