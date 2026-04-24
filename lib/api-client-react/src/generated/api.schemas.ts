@@ -149,6 +149,12 @@ export interface CreatePaperTradeBody {
 
 export interface ClosePaperTradeBody {
   note?: string;
+  /**
+   * Fraction of the position to close. 1 (default) closes the whole position. Less than 1 leaves the remainder as a new open trade at the same entry price.
+   * @minimum 0.05
+   * @maximum 1
+   */
+  closeFraction?: number;
 }
 
 export type JournalEntryOutcome =
@@ -249,6 +255,12 @@ export interface RiskConfig {
   maxKellyFraction: number;
   maxPositionUsd: number;
   bankrollUsd: number;
+  /** Floor for opportunity.confidence; trades below it are blocked. */
+  minConfidence: number;
+  /** Floor for opportunity.liquidity (USD); trades below it are blocked. */
+  minLiquidityUsd: number;
+  /** Floor for opportunity.edgeScore; trades below it are blocked. */
+  minEdgeScore: number;
   updatedAt: string;
 }
 
@@ -263,6 +275,15 @@ export interface UpdateRiskConfigBody {
   maxPositionUsd?: number;
   /** @minimum 0 */
   bankrollUsd?: number;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  minConfidence?: number;
+  /** @minimum 0 */
+  minLiquidityUsd?: number;
+  /** @minimum 0 */
+  minEdgeScore?: number;
 }
 
 export interface AnthropicConversation {

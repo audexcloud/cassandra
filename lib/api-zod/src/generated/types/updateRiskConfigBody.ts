@@ -17,4 +17,13 @@ export interface UpdateRiskConfigBody {
   maxPositionUsd?: number;
   /** @minimum 0 */
   bankrollUsd?: number;
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  minConfidence?: number;
+  /** @minimum 0 */
+  minLiquidityUsd?: number;
+  /** @minimum 0 */
+  minEdgeScore?: number;
 }

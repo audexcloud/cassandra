@@ -14,5 +14,11 @@ export interface RiskConfig {
   maxKellyFraction: number;
   maxPositionUsd: number;
   bankrollUsd: number;
+  /** Floor for opportunity.confidence; trades below it are blocked. */
+  minConfidence: number;
+  /** Floor for opportunity.liquidity (USD); trades below it are blocked. */
+  minLiquidityUsd: number;
+  /** Floor for opportunity.edgeScore; trades below it are blocked. */
+  minEdgeScore: number;
   updatedAt: Date;
 }

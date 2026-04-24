@@ -8,4 +8,10 @@
 
 export interface ClosePaperTradeBody {
   note?: string;
+  /**
+   * Fraction of the position to close. 1 (default) closes the whole position. Less than 1 leaves the remainder as a new open trade at the same entry price.
+   * @minimum 0.05
+   * @maximum 1
+   */
+  closeFraction?: number;
 }

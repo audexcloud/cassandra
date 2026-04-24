@@ -120,6 +120,112 @@ export function paperPnl(args: {
 }
 
 /**
+ * Structured risk gate. Returns the full set of reasons a trade would be
+ * blocked, so callers can surface a "why not trade?" explanation rather than
+ * a single opaque error string. An empty `reasons` array means the trade is
+ * permitted.
+ */
+export interface RiskGateInputs {
+  sizeUsd: number;
+  opportunity: {
+    confidence: number;
+    liquidity: number;
+    edgeScore: number;
+  };
+  config: {
+    killSwitchEngaged: boolean;
+    liveExecutionEnabled: boolean;
+    maxPositionUsd: number;
+    minConfidence?: number;
+    minLiquidityUsd?: number;
+    minEdgeScore?: number;
+  };
+}
+
+export interface RiskGateReason {
+  code:
+    | "kill_switch_engaged"
+    | "live_execution_blocked"
+    | "size_exceeds_max_position"
+    | "confidence_below_floor"
+    | "liquidity_below_floor"
+    | "edge_below_floor";
+  message: string;
+}
+
+export interface RiskGateResult {
+  allowed: boolean;
+  reasons: RiskGateReason[];
+}
+
+export function evaluateRiskGate(input: RiskGateInputs): RiskGateResult {
+  const reasons: RiskGateReason[] = [];
+  const { sizeUsd, opportunity: opp, config: cfg } = input;
+
+  if (cfg.killSwitchEngaged) {
+    reasons.push({
+      code: "kill_switch_engaged",
+      message: "Kill switch is engaged — all new trades are blocked.",
+    });
+  }
+  if (cfg.liveExecutionEnabled) {
+    reasons.push({
+      code: "live_execution_blocked",
+      message:
+        "Live execution is permanently disabled in this build. Refusing to trade.",
+    });
+  }
+  if (sizeUsd > cfg.maxPositionUsd) {
+    reasons.push({
+      code: "size_exceeds_max_position",
+      message: `Size $${sizeUsd.toFixed(2)} exceeds maxPositionUsd $${cfg.maxPositionUsd.toFixed(2)}.`,
+    });
+  }
+  if (typeof cfg.minConfidence === "number" && opp.confidence < cfg.minConfidence) {
+    reasons.push({
+      code: "confidence_below_floor",
+      message: `Opportunity confidence ${opp.confidence.toFixed(2)} is below floor ${cfg.minConfidence.toFixed(2)}.`,
+    });
+  }
+  if (typeof cfg.minLiquidityUsd === "number" && opp.liquidity < cfg.minLiquidityUsd) {
+    reasons.push({
+      code: "liquidity_below_floor",
+      message: `Opportunity liquidity $${opp.liquidity.toFixed(0)} is below floor $${cfg.minLiquidityUsd.toFixed(0)}.`,
+    });
+  }
+  if (typeof cfg.minEdgeScore === "number" && opp.edgeScore < cfg.minEdgeScore) {
+    reasons.push({
+      code: "edge_below_floor",
+      message: `Edge score ${opp.edgeScore.toFixed(3)} is below floor ${cfg.minEdgeScore.toFixed(3)}.`,
+    });
+  }
+
+  return { allowed: reasons.length === 0, reasons };
+}
+
+/**
+ * Weighted random selection by edgeScore. Opportunities with higher edge are
+ * proportionally more likely to be returned. Falls back to uniform if every
+ * weight is zero. Returns `null` for an empty input.
+ */
+export function weightedRandomPick<T extends { edgeScore: number }>(
+  items: T[],
+  rng: () => number = Math.random,
+): T | null {
+  if (items.length === 0) return null;
+  const total = items.reduce((s, x) => s + Math.max(0, x.edgeScore), 0);
+  if (total <= 0) {
+    return items[Math.floor(rng() * items.length)];
+  }
+  let r = rng() * total;
+  for (const it of items) {
+    r -= Math.max(0, it.edgeScore);
+    if (r <= 0) return it;
+  }
+  return items[items.length - 1];
+}
+
+/**
  * Map an edge score to a 0-1 confidence we publish. We take a slightly
  * pessimistic transform: low edges look low, high edges saturate.
  */

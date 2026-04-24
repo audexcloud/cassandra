@@ -9,7 +9,8 @@ import {
 } from "@workspace/api-zod";
 import { db } from "@workspace/db";
 import { opportunities, signalEvents, paperTrades } from "@workspace/db";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
+import { weightedRandomPick } from "../lib/cassandra/scoring";
 
 const router: IRouter = Router();
 
@@ -45,16 +46,16 @@ router.get("/opportunities/top10", async (_req, res) => {
 });
 
 router.get("/opportunities/random", async (_req, res) => {
-  const rows = await db
-    .select()
-    .from(opportunities)
-    .orderBy(sql`random()`)
-    .limit(1);
-  if (rows.length === 0) {
+  // Weighted random: opportunities with higher edgeScore are proportionally
+  // more likely to be surfaced. This is what the spec calls a "weighted
+  // random surprise" — uniform random would bias toward low-edge noise.
+  const rows = await db.select().from(opportunities);
+  const pick = weightedRandomPick(rows);
+  if (!pick) {
     res.status(404).json({ error: "No opportunities yet" });
     return;
   }
-  res.json(GetRandomOpportunityResponse.parse(serializeOpportunity(rows[0])));
+  res.json(GetRandomOpportunityResponse.parse(serializeOpportunity(pick)));
 });
 
 router.get("/opportunities/:id", async (req, res) => {

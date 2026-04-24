@@ -14,8 +14,8 @@ import {
   riskConfig,
   auditLog,
 } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
-import { paperPnl, priceForSide } from "../lib/cassandra/scoring";
+import { desc, eq } from "drizzle-orm";
+import { paperPnl, priceForSide, evaluateRiskGate } from "../lib/cassandra/scoring";
 import { serializePaperTrade } from "./opportunities";
 
 const router: IRouter = Router();
@@ -54,27 +54,6 @@ router.post("/paper-trades", async (req, res) => {
     res.status(500).json({ error: "Risk config not initialised" });
     return;
   }
-  if (cfg.killSwitchEngaged) {
-    res.status(400).json({
-      error: "Kill switch is engaged — paper trades are blocked.",
-    });
-    return;
-  }
-  if (cfg.liveExecutionEnabled) {
-    // Defensive: this build hard-disables live execution in code. If this
-    // ever flips true via the DB, refuse to act on it.
-    res.status(400).json({
-      error:
-        "liveExecutionEnabled is set but live execution is permanently disabled in this build.",
-    });
-    return;
-  }
-  if (sizeUsd > cfg.maxPositionUsd) {
-    res.status(400).json({
-      error: `Size ${sizeUsd} exceeds maxPositionUsd ${cfg.maxPositionUsd}`,
-    });
-    return;
-  }
 
   const [opp] = await db
     .select()
@@ -83,6 +62,40 @@ router.post("/paper-trades", async (req, res) => {
     .limit(1);
   if (!opp) {
     res.status(400).json({ error: "Opportunity not found" });
+    return;
+  }
+
+  // Structured risk gate: returns every reason the trade is blocked so the
+  // UI can display a "why not trade?" explanation rather than a single
+  // opaque error.
+  const gate = evaluateRiskGate({
+    sizeUsd,
+    opportunity: {
+      confidence: opp.confidence,
+      liquidity: opp.liquidity,
+      edgeScore: opp.edgeScore,
+    },
+    config: {
+      killSwitchEngaged: cfg.killSwitchEngaged,
+      liveExecutionEnabled: cfg.liveExecutionEnabled,
+      maxPositionUsd: cfg.maxPositionUsd,
+      minConfidence: cfg.minConfidence,
+      minLiquidityUsd: cfg.minLiquidityUsd,
+      minEdgeScore: cfg.minEdgeScore,
+    },
+  });
+  if (!gate.allowed) {
+    await db.insert(auditLog).values({
+      actor: "user",
+      action: "paper_trade.blocked",
+      target: `opportunity:${opp.id}`,
+      payload: { sizeUsd, direction, reasons: gate.reasons },
+    });
+    res.status(400).json({
+      blocked: true,
+      reasons: gate.reasons,
+      error: gate.reasons.map((r) => r.message).join(" "),
+    });
     return;
   }
 
@@ -119,60 +132,111 @@ router.post("/paper-trades/:id/close", async (req, res) => {
     res.status(400).json({ error: parsedParams.error.message });
     return;
   }
+  // Fail fast on a malformed body — silently clamping invalid input would let
+  // bad clients trade with surprise sizes.
   const parsedBody = ClosePaperTradeBody.safeParse(req.body ?? {});
-  const note = parsedBody.success ? parsedBody.data.note : undefined;
+  if (!parsedBody.success) {
+    res.status(400).json({ error: parsedBody.error.message });
+    return;
+  }
+  const note = parsedBody.data.note;
+  // Partial cash-out: closeFraction in [0.05, 1] tells us how much of the
+  // position to realize. 1 (the default) is a full close. Anything < 1
+  // splits the trade: original row is closed at the partial size, a new
+  // open row is created for the remainder. The OpenAPI/zod schema enforces
+  // the [0.05, 1] range — we don't clamp silently here.
+  const fraction = parsedBody.data.closeFraction ?? 1;
   const { id } = parsedParams.data;
 
-  const [trade] = await db
-    .select()
-    .from(paperTrades)
-    .where(eq(paperTrades.id, id))
-    .limit(1);
-  if (!trade) {
+  const result = await db.transaction(async (tx) => {
+    const [trade] = await tx
+      .select()
+      .from(paperTrades)
+      .where(eq(paperTrades.id, id))
+      .limit(1);
+    if (!trade) return { kind: "not_found" as const };
+    if (trade.status === "closed") {
+      return { kind: "already_closed" as const, trade };
+    }
+
+    const [opp] = await tx
+      .select()
+      .from(opportunities)
+      .where(eq(opportunities.id, trade.opportunityId))
+      .limit(1);
+    // MTM uses the implied market price (not our internal model), so closing
+    // a freshly opened position at the same instant nets ~$0.
+    const dir = trade.direction as "yes" | "no";
+    const exitProb = opp ? priceForSide(dir, opp.marketProb) : trade.entryProb;
+    const closedSize = Number((trade.sizeUsd * fraction).toFixed(2));
+    const remainingSize = Number((trade.sizeUsd - closedSize).toFixed(2));
+    const pnl = paperPnl({
+      direction: dir,
+      sizeUsd: closedSize,
+      entryProb: trade.entryProb,
+      exitProb,
+    });
+
+    const [updated] = await tx
+      .update(paperTrades)
+      .set({
+        status: "closed",
+        exitProb,
+        sizeUsd: closedSize,
+        pnlUsd: Number(pnl.toFixed(2)),
+        closedAt: new Date(),
+        rationale: note ? `${trade.rationale ?? ""}\nclose: ${note}`.trim() : trade.rationale,
+      })
+      .where(eq(paperTrades.id, id))
+      .returning();
+
+    // If this was a partial cash-out, open a new position for the remainder
+    // at the SAME entry price (the user is keeping the rest of the position
+    // they originally took, not re-entering at the current market).
+    let remainder: typeof paperTrades.$inferSelect | null = null;
+    if (remainingSize > 0) {
+      const [created] = await tx
+        .insert(paperTrades)
+        .values({
+          opportunityId: trade.opportunityId,
+          marketKey: trade.marketKey,
+          question: trade.question,
+          direction: trade.direction,
+          sizeUsd: remainingSize,
+          entryProb: trade.entryProb,
+          rationale: trade.rationale
+            ? `${trade.rationale} (remainder of partial cash-out)`
+            : "remainder of partial cash-out",
+        })
+        .returning();
+      remainder = created;
+    }
+
+    await tx.insert(auditLog).values({
+      actor: "user",
+      action: "paper_trade.close",
+      target: `paper_trade:${id}`,
+      payload: {
+        exitProb,
+        pnlUsd: pnl,
+        note,
+        closeFraction: fraction,
+        remainderTradeId: remainder?.id ?? null,
+      },
+    });
+
+    return { kind: "ok" as const, updated };
+  });
+
+  if (result.kind === "not_found") {
     res.status(404).json({ error: "Paper trade not found" });
     return;
   }
-  if (trade.status === "closed") {
-    res.json(serializePaperTrade(trade));
+  if (result.kind === "already_closed") {
+    res.json(serializePaperTrade(result.trade));
     return;
   }
-
-  const [opp] = await db
-    .select()
-    .from(opportunities)
-    .where(eq(opportunities.id, trade.opportunityId))
-    .limit(1);
-  // MTM uses the implied market price (not our internal model), so closing a
-  // freshly opened position at the same instant nets ~$0, not "free alpha".
-  const dir = trade.direction as "yes" | "no";
-  const exitProb = opp ? priceForSide(dir, opp.marketProb) : trade.entryProb;
-  const pnl = paperPnl({
-    direction: dir,
-    sizeUsd: trade.sizeUsd,
-    entryProb: trade.entryProb,
-    exitProb,
-  });
-
-  const [updated] = await db
-    .update(paperTrades)
-    .set({
-      status: "closed",
-      exitProb,
-      pnlUsd: Number(pnl.toFixed(2)),
-      closedAt: new Date(),
-      rationale: note ? `${trade.rationale ?? ""}\nclose: ${note}`.trim() : trade.rationale,
-    })
-    .where(eq(paperTrades.id, id))
-    .returning();
-
-  await db.insert(auditLog).values({
-    actor: "user",
-    action: "paper_trade.close",
-    target: `paper_trade:${id}`,
-    payload: { exitProb, pnlUsd: pnl, note },
-  });
-
-  res.json(ClosePaperTradeResponse.parse(serializePaperTrade(updated)));
+  res.json(ClosePaperTradeResponse.parse(serializePaperTrade(result.updated)));
 });
 
 export default router;

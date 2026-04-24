@@ -814,6 +814,11 @@ components:
       properties:
         note:
           type: string
+        closeFraction:
+          type: number
+          minimum: 0.05
+          maximum: 1
+          description: Fraction of the position to close. 1 (default) closes the whole position. Less than 1 leaves the remainder as a new open trade at the same entry price.
 
     JournalEntry:
       type: object
@@ -994,6 +999,15 @@ components:
           type: number
         bankrollUsd:
           type: number
+        minConfidence:
+          type: number
+          description: Floor for opportunity.confidence; trades below it are blocked.
+        minLiquidityUsd:
+          type: number
+          description: Floor for opportunity.liquidity (USD); trades below it are blocked.
+        minEdgeScore:
+          type: number
+          description: Floor for opportunity.edgeScore; trades below it are blocked.
         updatedAt:
           type: string
           format: date-time
@@ -1003,6 +1017,9 @@ components:
         - maxKellyFraction
         - maxPositionUsd
         - bankrollUsd
+        - minConfidence
+        - minLiquidityUsd
+        - minEdgeScore
         - updatedAt
 
     UpdateRiskConfigBody:
@@ -1018,6 +1035,16 @@ components:
           type: number
           minimum: 0
         bankrollUsd:
+          type: number
+          minimum: 0
+        minConfidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        minLiquidityUsd:
+          type: number
+          minimum: 0
+        minEdgeScore:
           type: number
           minimum: 0
 

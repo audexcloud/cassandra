@@ -26,6 +26,9 @@ function serialize(row: typeof riskConfig.$inferSelect) {
     maxKellyFraction: row.maxKellyFraction,
     maxPositionUsd: row.maxPositionUsd,
     bankrollUsd: row.bankrollUsd,
+    minConfidence: row.minConfidence,
+    minLiquidityUsd: row.minLiquidityUsd,
+    minEdgeScore: row.minEdgeScore,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -51,6 +54,9 @@ router.patch("/risk/config", async (req, res) => {
       maxKellyFraction: parsed.data.maxKellyFraction ?? existing.maxKellyFraction,
       maxPositionUsd: parsed.data.maxPositionUsd ?? existing.maxPositionUsd,
       bankrollUsd: parsed.data.bankrollUsd ?? existing.bankrollUsd,
+      minConfidence: parsed.data.minConfidence ?? existing.minConfidence,
+      minLiquidityUsd: parsed.data.minLiquidityUsd ?? existing.minLiquidityUsd,
+      minEdgeScore: parsed.data.minEdgeScore ?? existing.minEdgeScore,
       updatedAt: new Date(),
     })
     .where(eq(riskConfig.id, existing.id))

@@ -399,8 +399,19 @@ export const ClosePaperTradeParams = zod.object({
   id: zod.coerce.number(),
 });
 
+export const closePaperTradeBodyCloseFractionMin = 0.05;
+export const closePaperTradeBodyCloseFractionMax = 1;
+
 export const ClosePaperTradeBody = zod.object({
   note: zod.string().optional(),
+  closeFraction: zod
+    .number()
+    .min(closePaperTradeBodyCloseFractionMin)
+    .max(closePaperTradeBodyCloseFractionMax)
+    .optional()
+    .describe(
+      "Fraction of the position to close. 1 (default) closes the whole position. Less than 1 leaves the remainder as a new open trade at the same entry price.",
+    ),
 });
 
 export const ClosePaperTradeResponse = zod.object({
@@ -631,6 +642,17 @@ export const GetRiskConfigResponse = zod.object({
     .describe("Hard cap on the Kelly fraction (e.g. 0.25 = quarter-Kelly)"),
   maxPositionUsd: zod.number(),
   bankrollUsd: zod.number(),
+  minConfidence: zod
+    .number()
+    .describe("Floor for opportunity.confidence; trades below it are blocked."),
+  minLiquidityUsd: zod
+    .number()
+    .describe(
+      "Floor for opportunity.liquidity (USD); trades below it are blocked.",
+    ),
+  minEdgeScore: zod
+    .number()
+    .describe("Floor for opportunity.edgeScore; trades below it are blocked."),
   updatedAt: zod.coerce.date(),
 });
 
@@ -644,6 +666,13 @@ export const updateRiskConfigBodyMaxPositionUsdMin = 0;
 
 export const updateRiskConfigBodyBankrollUsdMin = 0;
 
+export const updateRiskConfigBodyMinConfidenceMin = 0;
+export const updateRiskConfigBodyMinConfidenceMax = 1;
+
+export const updateRiskConfigBodyMinLiquidityUsdMin = 0;
+
+export const updateRiskConfigBodyMinEdgeScoreMin = 0;
+
 export const UpdateRiskConfigBody = zod.object({
   killSwitchEngaged: zod.boolean().optional(),
   maxKellyFraction: zod
@@ -656,6 +685,19 @@ export const UpdateRiskConfigBody = zod.object({
     .min(updateRiskConfigBodyMaxPositionUsdMin)
     .optional(),
   bankrollUsd: zod.number().min(updateRiskConfigBodyBankrollUsdMin).optional(),
+  minConfidence: zod
+    .number()
+    .min(updateRiskConfigBodyMinConfidenceMin)
+    .max(updateRiskConfigBodyMinConfidenceMax)
+    .optional(),
+  minLiquidityUsd: zod
+    .number()
+    .min(updateRiskConfigBodyMinLiquidityUsdMin)
+    .optional(),
+  minEdgeScore: zod
+    .number()
+    .min(updateRiskConfigBodyMinEdgeScoreMin)
+    .optional(),
 });
 
 export const UpdateRiskConfigResponse = zod.object({
@@ -668,6 +710,17 @@ export const UpdateRiskConfigResponse = zod.object({
     .describe("Hard cap on the Kelly fraction (e.g. 0.25 = quarter-Kelly)"),
   maxPositionUsd: zod.number(),
   bankrollUsd: zod.number(),
+  minConfidence: zod
+    .number()
+    .describe("Floor for opportunity.confidence; trades below it are blocked."),
+  minLiquidityUsd: zod
+    .number()
+    .describe(
+      "Floor for opportunity.liquidity (USD); trades below it are blocked.",
+    ),
+  minEdgeScore: zod
+    .number()
+    .describe("Floor for opportunity.edgeScore; trades below it are blocked."),
   updatedAt: zod.coerce.date(),
 });
 
