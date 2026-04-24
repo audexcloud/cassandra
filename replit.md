@@ -35,9 +35,22 @@ This is **Cassandra** — a single-user, local-first personal predictive intelli
 
 ## OpenClaw orchestrator
 
-`artifacts/api-server/src/lib/cassandra/openclaw.ts` runs every 60s (and once at startup). It calls each mock connector (`manifold`, `polymarket`, `kalshi`, `metaculus`, `comex`, `news_wires`), upserts opportunities (unique on `source + marketKey`), inserts signal events, recomputes `edgeScore` / `kellyFraction` / `suggestedDirection`, prunes the signal table to the most recent 500 rows, and writes job rows + an audit-log entry per cycle. Connector status is held in process memory and exposed via `GET /api/openclaw/status`.
+`artifacts/api-server/src/lib/cassandra/openclaw.ts` runs every 60s (and once at startup). It calls each live connector under `artifacts/api-server/src/lib/cassandra/connectors/` (`manifold`, `polymarket`, `kalshi`, `metaculus`, `comex`, `news_wires`), upserts opportunities (unique on `source + marketKey`), inserts signal events, recomputes `edgeScore` / `kellyFraction` / `suggestedDirection`, prunes the signal table to the most recent 500 rows, and writes job rows + an audit-log entry per cycle. Connector status is held in process memory and exposed via `GET /api/openclaw/status`.
 
-To swap a mock connector for a real one later, replace its `run()` in `connectors.ts` with a real fetch — the rest of the pipeline does not need to change.
+### Live connectors
+
+Each connector hits a public upstream (no key required for read access except where noted), times out at 12s, retries once on transient failures (network errors, 429, 5xx), and uses a `Cassandra-OpenClaw/1.0` user-agent. The shared HTTP helper lives at `connectors/http.ts`.
+
+| Connector | Upstream | Auth | Emits |
+|-----------|----------|------|-------|
+| `manifold` | `api.manifold.markets/v0/search-markets` | none | up to 12 binary markets |
+| `polymarket` | `gamma-api.polymarket.com/markets` | none | up to 12 binary markets (filtered by liquidity ≥ $1k) |
+| `kalshi` | `api.elections.kalshi.com/trade-api/v2/markets` | optional `KALSHI_API_KEY` | up to 12 binary markets (only those with quoted prices and volume/OI) |
+| `metaculus` | `metaculus.com/api2/questions/` | required `METACULUS_API_KEY` (Token); degrades gracefully when missing | up to 12 binary forecast questions |
+| `comex` | `query1.finance.yahoo.com/v8/finance/chart` for `GC=F`, `SI=F`, `HG=F`, `PL=F` | none | metals price-move signals (1d/1w/1m) above material thresholds |
+| `news_wires` | BBC World News RSS + Hacker News top-stories Firebase API | none | headline signals with keyword-derived sentiment |
+
+Connectors that can't fetch usable data set `status = "degraded"` with an actionable `note` (e.g. "set METACULUS_API_KEY"). The OpenClaw command center surfaces both fields per connector. To swap or extend a connector, edit only its file under `connectors/` — the orchestrator never has to change.
 
 ## Scoring math
 
@@ -62,6 +75,8 @@ To swap a mock connector for a real one later, replace its `run()` in `connector
 - `DATABASE_URL` — provided by the Replit DB
 - `ANTHROPIC_API_KEY` — provided via the Replit AI Integrations connector for `@workspace/integrations-anthropic-ai`
 - `PORT` — assigned per artifact
+- `KALSHI_API_KEY` — *optional*. When set, sent as `Authorization: Bearer …` to the Kalshi trade-api so quoted prices come through. Without it the connector reports `degraded` with an actionable note.
+- `METACULUS_API_KEY` — *optional but currently required for live data*. When set, sent as `Authorization: Token …` to the Metaculus REST API. Without it the connector reports `degraded` with an actionable note.
 
 ## Conventions
 

@@ -1,8 +1,9 @@
 /**
- * OpenClaw orchestrator. Runs mock connectors on a periodic cadence, ingests
- * markets/signals into the database, recomputes scoring, and records each
- * job's outcome. All state lives in Postgres so the UI can show real history
- * even after restarts.
+ * OpenClaw orchestrator. Runs the live upstream connectors (Manifold,
+ * Polymarket, Kalshi, Metaculus, COMEX/metals, news wires) on a periodic
+ * cadence, ingests markets/signals into the database, recomputes scoring,
+ * and records each job's outcome. All state lives in Postgres so the UI
+ * can show real history even after restarts.
  */
 
 import { db } from "@workspace/db";
