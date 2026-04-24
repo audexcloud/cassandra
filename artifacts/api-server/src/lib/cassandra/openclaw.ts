@@ -17,8 +17,17 @@ import {
 } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 
-import { connectors, type ConnectorResult } from "./connectors";
+import {
+  connectors,
+  type ConnectorResult,
+  type ConnectorSignal,
+} from "./connectors";
 import { edgeScore, kellyFraction, suggestedDirection } from "./scoring";
+import {
+  applyMatchedSignals,
+  buildMatchRationale,
+  matchSignalsToMarket,
+} from "./signalMatching";
 import {
   backtestRanRecently,
   runStandardBacktests,
@@ -150,23 +159,59 @@ async function getMaxKelly(): Promise<number> {
   return cfg?.maxKellyFraction ?? 0.25;
 }
 
-async function ingestConnector(result: ConnectorResult, maxKelly: number): Promise<{
+async function ingestConnector(
+  result: ConnectorResult,
+  ambientPool: ConnectorSignal[],
+  maxKelly: number,
+): Promise<{
   upserted: number;
   signalsInserted: number;
+  matchedAmbient: number;
 }> {
   let upserted = 0;
   let signalsInserted = 0;
+  let matchedAmbient = 0;
 
   for (const market of result.markets) {
+    // Route ambient signals (COMEX moves, news headlines) to this market
+    // based on domain + keyword overlap, then re-derive modelProb so the
+    // routing layer actually moves the published edge instead of the
+    // upstream-shaped market.modelProb (which equals market.marketProb on
+    // every real connector since they don't ship per-market signals).
+    const matched = matchSignalsToMarket(market, ambientPool);
+    matchedAmbient += matched.length;
+    const { modelProb, ambientShift } = applyMatchedSignals({
+      marketProb: market.marketProb,
+      marketSignals: market.signals,
+      matched,
+    });
+
     const inputs = {
       marketProb: market.marketProb,
-      modelProb: market.modelProb,
+      modelProb,
       confidence: market.confidence,
       liquidity: market.liquidity,
     };
     const score = edgeScore(inputs);
     const direction = suggestedDirection(inputs);
     const kelly = kellyFraction(inputs, maxKelly);
+
+    // Augment the connector's rationale with attribution for any matched
+    // ambient signals, so the dashboard explains *why* modelProb moved.
+    const matchExtras = buildMatchRationale({
+      matched,
+      marketProb: market.marketProb,
+      modelProb,
+      ambientShift,
+    });
+    const rationale =
+      matched.length > 0
+        ? {
+            ...market.rationale,
+            observed: [...market.rationale.observed, ...matchExtras.observed],
+            inferred: [...market.rationale.inferred, ...matchExtras.inferred],
+          }
+        : market.rationale;
 
     const [row] = await db
       .insert(opportunities)
@@ -176,8 +221,8 @@ async function ingestConnector(result: ConnectorResult, maxKelly: number): Promi
         domain: market.domain,
         question: market.question,
         marketProb: market.marketProb,
-        modelProb: market.modelProb,
-        edge: market.modelProb - market.marketProb,
+        modelProb,
+        edge: modelProb - market.marketProb,
         edgeScore: score,
         confidence: market.confidence,
         liquidity: market.liquidity,
@@ -185,21 +230,21 @@ async function ingestConnector(result: ConnectorResult, maxKelly: number): Promi
         kellyFraction: kelly,
         suggestedDirection: direction,
         url: market.url ?? null,
-        rationale: market.rationale,
+        rationale,
       })
       .onConflictDoUpdate({
         target: [opportunities.source, opportunities.marketKey],
         set: {
           marketProb: market.marketProb,
-          modelProb: market.modelProb,
-          edge: market.modelProb - market.marketProb,
+          modelProb,
+          edge: modelProb - market.marketProb,
           edgeScore: score,
           confidence: market.confidence,
           liquidity: market.liquidity,
           spread: market.spread,
           kellyFraction: kelly,
           suggestedDirection: direction,
-          rationale: market.rationale,
+          rationale,
           updatedAt: new Date(),
         },
       })
@@ -240,7 +285,7 @@ async function ingestConnector(result: ConnectorResult, maxKelly: number): Promi
     signalsInserted += result.ambientSignals.length;
   }
 
-  return { upserted, signalsInserted };
+  return { upserted, signalsInserted, matchedAmbient };
 }
 
 async function pruneSignals(keepMostRecent = 500): Promise<void> {
@@ -275,12 +320,69 @@ async function runCycleInner(): Promise<void> {
   try {
     const maxKelly = await getMaxKelly();
 
+    // ----- Phase 1: fetch every connector and collect all ambient signals.
+    // We do all fetches before any ingest so that every market in this cycle
+    // can be matched against the *full* ambient pool (COMEX moves + news
+    // headlines from every wire), regardless of connector ordering.
+    interface FetchOutcome {
+      connector: (typeof connectors)[number];
+      jobId: number;
+      jobStartedAt: Date;
+      result?: ConnectorResult;
+      error?: string;
+    }
+    const fetchOutcomes: FetchOutcome[] = [];
+    const ambientPool: ConnectorSignal[] = [];
+
     for (const connector of connectors) {
       const jobStartedAt = new Date();
       const jobId = await recordJobStart(`ingest_${connector.name}`);
       try {
         const result = await connector.run();
-        const { upserted, signalsInserted } = await ingestConnector(result, maxKelly);
+        ambientPool.push(...result.ambientSignals);
+        fetchOutcomes.push({ connector, jobId, jobStartedAt, result });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        fetchOutcomes.push({ connector, jobId, jobStartedAt, error: errMsg });
+      }
+    }
+
+    // ----- Phase 2: ingest each connector's markets, applying matched
+    // ambient signals, and finalize the per-connector job rows.
+    for (const outcome of fetchOutcomes) {
+      const { connector, jobId, jobStartedAt, result, error } = outcome;
+      if (error !== undefined || !result) {
+        const errMsg = error ?? "connector returned no result";
+        state.connectorStatus.set(connector.name, {
+          status: "error",
+          lastSyncAt: state.connectorStatus.get(connector.name)?.lastSyncAt ?? null,
+          note: errMsg,
+        });
+        await db
+          .insert(connectorStatus)
+          .values({
+            name: connector.name,
+            status: "error",
+            mockDataMode: connector.mockDataMode,
+            lastSuccessfulRun: connector.lastSuccessfulRun,
+            lastError: errMsg,
+          })
+          .onConflictDoUpdate({
+            target: connectorStatus.name,
+            set: {
+              status: "error",
+              lastError: errMsg,
+              updatedAt: new Date(),
+            },
+          });
+        await recordJobFinish(jobId, "error", jobStartedAt, errMsg);
+        logger.warn({ connector: connector.name, err: errMsg }, "connector run failed");
+        continue;
+      }
+
+      try {
+        const { upserted, signalsInserted, matchedAmbient } =
+          await ingestConnector(result, ambientPool, maxKelly);
         totalMarkets += upserted;
         totalSignals += signalsInserted;
         state.connectorStatus.set(connector.name, {
@@ -288,8 +390,6 @@ async function runCycleInner(): Promise<void> {
           lastSyncAt: result.fetchedAt,
           note: result.note,
         });
-        // Mirror to the connector_status table so the OpenClaw command center
-        // surfaces the same view between cycles, across restarts.
         await db
           .insert(connectorStatus)
           .values({
@@ -313,7 +413,7 @@ async function runCycleInner(): Promise<void> {
           jobId,
           "ok",
           jobStartedAt,
-          `markets=${upserted} signals=${signalsInserted}`,
+          `markets=${upserted} signals=${signalsInserted} matchedAmbient=${matchedAmbient}`,
         );
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
@@ -340,7 +440,7 @@ async function runCycleInner(): Promise<void> {
             },
           });
         await recordJobFinish(jobId, "error", jobStartedAt, errMsg);
-        logger.warn({ connector: connector.name, err }, "connector run failed");
+        logger.warn({ connector: connector.name, err }, "connector ingest failed");
       }
     }
 
