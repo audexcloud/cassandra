@@ -876,6 +876,8 @@ export const GetRiskConfigResponse = zod.object({
 /**
  * @summary Update risk configuration (kill switch, kelly fraction, max position size)
  */
+export const updateRiskConfigBodyReasonMax = 500;
+
 export const updateRiskConfigBodyMaxKellyFractionMin = 0;
 export const updateRiskConfigBodyMaxKellyFractionMax = 1;
 
@@ -892,6 +894,13 @@ export const updateRiskConfigBodyMinEdgeScoreMin = 0;
 
 export const UpdateRiskConfigBody = zod.object({
   killSwitchEngaged: zod.boolean().optional(),
+  reason: zod
+    .string()
+    .max(updateRiskConfigBodyReasonMax)
+    .optional()
+    .describe(
+      "Optional human-readable reason recorded against the kill_switch_events audit row when killSwitchEngaged is toggled.\n",
+    ),
   maxKellyFraction: zod
     .number()
     .min(updateRiskConfigBodyMaxKellyFractionMin)

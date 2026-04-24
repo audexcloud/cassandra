@@ -162,7 +162,7 @@ export default function Dashboard() {
           <CardHeader className="pb-2 border-b border-border/50">
             <CardTitle className="text-sm font-medium uppercase flex items-center text-primary">
               <TrendingUp className="h-4 w-4 mr-2" /> Top Opportunities
-              <Link href="/top10" className="ml-auto text-[10px] text-muted-foreground hover:text-primary uppercase tracking-wider">
+              <Link href="/top" className="ml-auto text-[10px] text-muted-foreground hover:text-primary uppercase tracking-wider">
                 See all →
               </Link>
             </CardTitle>

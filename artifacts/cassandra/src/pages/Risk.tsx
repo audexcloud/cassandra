@@ -104,10 +104,13 @@ export default function Risk() {
       <Card className={`border-2 transition-colors ${isKillSwitchOn ? 'border-destructive bg-destructive/5' : 'border-border/50 bg-card/50'}`}>
         <CardHeader className="border-b border-border/30 pb-4">
           <CardTitle className="uppercase tracking-wider flex items-center text-lg">
+            {/* "Engaged" = kill switch is ON = trading halted. The previous
+                copy inverted this and showed "System Disarmed" while the
+                kill switch was active, which read as "all clear." */}
             {isKillSwitchOn ? (
-              <><ShieldAlert className="w-5 h-5 mr-2 text-destructive" /> System Disarmed</>
+              <><ShieldAlert className="w-5 h-5 mr-2 text-destructive" /> Kill Switch Engaged · Trading Halted</>
             ) : (
-              <><ShieldCheck className="w-5 h-5 mr-2 text-emerald-500" /> System Armed</>
+              <><ShieldCheck className="w-5 h-5 mr-2 text-emerald-500" /> Kill Switch Disarmed · Trading Live (paper)</>
             )}
           </CardTitle>
           <CardDescription>

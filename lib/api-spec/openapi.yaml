@@ -1209,6 +1209,12 @@ components:
       properties:
         killSwitchEngaged:
           type: boolean
+        reason:
+          type: string
+          description: >
+            Optional human-readable reason recorded against the
+            kill_switch_events audit row when killSwitchEngaged is toggled.
+          maxLength: 500
         maxKellyFraction:
           type: number
           minimum: 0

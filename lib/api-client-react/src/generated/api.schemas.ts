@@ -398,6 +398,12 @@ export interface RiskConfig {
 export interface UpdateRiskConfigBody {
   killSwitchEngaged?: boolean;
   /**
+   * Optional human-readable reason recorded against the kill_switch_events audit row when killSwitchEngaged is toggled.
+
+   * @maxLength 500
+   */
+  reason?: string;
+  /**
    * @minimum 0
    * @maximum 1
    */

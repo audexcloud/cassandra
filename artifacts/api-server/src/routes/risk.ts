@@ -81,8 +81,8 @@ router.patch("/risk/config", async (req, res) => {
       engaged: newEngaged,
       actor: "user",
       reason:
-        typeof (parsed.data as { reason?: unknown }).reason === "string"
-          ? ((parsed.data as { reason?: string }).reason as string)
+        parsed.data.reason && parsed.data.reason.trim().length > 0
+          ? parsed.data.reason.trim()
           : newEngaged
             ? "Manual kill switch engaged via /risk/config."
             : "Manual kill switch disengaged via /risk/config.",
