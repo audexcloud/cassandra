@@ -286,6 +286,83 @@ export interface UpdateRiskConfigBody {
   minEdgeScore?: number;
 }
 
+export interface StructuredAgentQueryBody {
+  /**
+   * @minLength 1
+   * @maxLength 4000
+   */
+  query: string;
+}
+
+export type StructuredAgentEvidenceKind =
+  (typeof StructuredAgentEvidenceKind)[keyof typeof StructuredAgentEvidenceKind];
+
+export const StructuredAgentEvidenceKind = {
+  observed: "observed",
+  inferred: "inferred",
+  speculation: "speculation",
+} as const;
+
+export interface StructuredAgentEvidence {
+  kind: StructuredAgentEvidenceKind;
+  statement: string;
+}
+
+export interface StructuredAgentParallel {
+  label: string;
+  summary: string;
+  outcome?: string;
+}
+
+export interface StructuredAgentCandidate {
+  marketKey: string;
+  rationale: string;
+}
+
+export type StructuredAgentTradePlanDirection =
+  (typeof StructuredAgentTradePlanDirection)[keyof typeof StructuredAgentTradePlanDirection];
+
+export const StructuredAgentTradePlanDirection = {
+  yes: "yes",
+  no: "no",
+} as const;
+
+export type StructuredAgentTradePlanEntryZone = {
+  low: number;
+  high: number;
+};
+
+export type StructuredAgentTradePlanCashOutLadderItem = {
+  price: number;
+  fraction: number;
+};
+
+export interface StructuredAgentTradePlan {
+  direction: StructuredAgentTradePlanDirection;
+  sizeUsd: number;
+  entryZone: StructuredAgentTradePlanEntryZone;
+  cashOutLadder: StructuredAgentTradePlanCashOutLadderItem[];
+  exitStrategy: string;
+  invalidations: string[];
+}
+
+export interface StructuredAgentResponse {
+  summary: string;
+  sources: string[];
+  evidence: StructuredAgentEvidence[];
+  parallels: StructuredAgentParallel[];
+  /**
+   * @minimum 0
+   * @maximum 1
+   */
+  confidence: number;
+  uncertainty: string[];
+  nextSteps: string[];
+  watchlist: string[];
+  candidates: StructuredAgentCandidate[];
+  tradePlan?: StructuredAgentTradePlan | null;
+}
+
 export interface AnthropicConversation {
   id: number;
   title: string;

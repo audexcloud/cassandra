@@ -428,50 +428,141 @@ const NEWS_AMBIENT_SEEDS: ConnectorSignal[] = [
   },
 ];
 
+/**
+ * Production-shape connector interface. Real connectors implement the same
+ * methods (`fetch`, `normalize`, `healthCheck`) and the orchestrator never
+ * has to know whether it's talking to a mock or a real upstream. The mock
+ * connectors below set `mockDataMode = true`; real ones flip it to false.
+ */
+export interface RawFetchResult {
+  /** Raw upstream payload — for mocks this is just the seeds we'll normalize. */
+  source: string;
+  rawMarkets: MarketSeed[];
+  rawAmbient: ConnectorSignal[];
+  fetchedAt: Date;
+}
+
+export interface ConnectorHealth {
+  status: "ok" | "degraded" | "error" | "idle";
+  lastSuccessfulRun: Date | null;
+  message?: string;
+}
+
 export interface Connector {
   name: string;
-  run: () => Promise<ConnectorResult>;
+  domain: ConnectorDomain | "mixed";
+  mockDataMode: boolean;
+  /** Last time `fetch()` returned ok. Updated by the orchestrator. */
+  lastSuccessfulRun: Date | null;
+  /** Pull raw data from the upstream (or, for mocks, the seed bank). */
+  fetch(): Promise<RawFetchResult>;
+  /** Shape raw data into the internal `ConnectorMarket`/`ConnectorSignal` shape. */
+  normalize(raw: RawFetchResult): ConnectorResult;
+  /** Quick liveness probe used by the OpenClaw command center. */
+  healthCheck(): Promise<ConnectorHealth>;
+  /**
+   * Convenience that runs fetch -> normalize -> updates `lastSuccessfulRun`.
+   * The orchestrator typically calls this; tests can call fetch/normalize
+   * separately to verify each step.
+   */
+  run(): Promise<ConnectorResult>;
 }
 
 const buildConnector = (
   name: string,
   source: string,
+  domain: ConnectorDomain | "mixed",
   seeds: MarketSeed[],
   ambient: ConnectorSignal[] = [],
-): Connector => ({
-  name,
-  run: async (): Promise<ConnectorResult> => {
-    const markets = seeds.map((s) => buildMarket(source, s));
-    // Recompute confidence from the signal pool so it tracks signal quality.
-    for (const m of markets) {
-      const signalConfidence = confidenceFromSignals(m.signals as RawSignal[]);
-      m.confidence = Math.max(m.confidence, signalConfidence);
-    }
-    return {
-      name,
-      status: "ok",
-      fetchedAt: new Date(),
-      markets,
-      ambientSignals: ambient,
-    };
-  },
-});
+): Connector => {
+  const c: Connector = {
+    name,
+    domain,
+    mockDataMode: true,
+    lastSuccessfulRun: null,
+    async fetch(): Promise<RawFetchResult> {
+      // Mock connector: "fetching" is just returning the seed bank with a
+      // current timestamp. Real connectors hit the upstream API here.
+      return {
+        source,
+        rawMarkets: seeds,
+        rawAmbient: ambient,
+        fetchedAt: new Date(),
+      };
+    },
+    normalize(raw: RawFetchResult): ConnectorResult {
+      const markets = raw.rawMarkets.map((s) => buildMarket(raw.source, s));
+      for (const m of markets) {
+        const signalConfidence = confidenceFromSignals(m.signals as RawSignal[]);
+        m.confidence = Math.max(m.confidence, signalConfidence);
+      }
+      return {
+        name,
+        status: "ok",
+        fetchedAt: raw.fetchedAt,
+        markets,
+        ambientSignals: raw.rawAmbient,
+      };
+    },
+    async healthCheck(): Promise<ConnectorHealth> {
+      // Mock connectors are always available; their `mockDataMode` flag
+      // tells the UI not to trust this number for production purposes.
+      return {
+        status: "ok",
+        lastSuccessfulRun: c.lastSuccessfulRun,
+        message: "mock connector",
+      };
+    },
+    async run(): Promise<ConnectorResult> {
+      const raw = await c.fetch();
+      const result = c.normalize(raw);
+      c.lastSuccessfulRun = result.fetchedAt;
+      return result;
+    },
+  };
+  return c;
+};
+
+const buildAmbientConnector = (
+  name: string,
+  ambient: ConnectorSignal[],
+): Connector => {
+  const c: Connector = {
+    name,
+    domain: "mixed",
+    mockDataMode: true,
+    lastSuccessfulRun: null,
+    async fetch(): Promise<RawFetchResult> {
+      return { source: name, rawMarkets: [], rawAmbient: ambient, fetchedAt: new Date() };
+    },
+    normalize(raw: RawFetchResult): ConnectorResult {
+      return {
+        name,
+        status: "ok",
+        fetchedAt: raw.fetchedAt,
+        markets: [],
+        ambientSignals: raw.rawAmbient,
+        note: "Ambient news signals (mock).",
+      };
+    },
+    async healthCheck(): Promise<ConnectorHealth> {
+      return { status: "ok", lastSuccessfulRun: c.lastSuccessfulRun, message: "mock connector" };
+    },
+    async run(): Promise<ConnectorResult> {
+      const raw = await c.fetch();
+      const result = c.normalize(raw);
+      c.lastSuccessfulRun = result.fetchedAt;
+      return result;
+    },
+  };
+  return c;
+};
 
 export const connectors: Connector[] = [
-  buildConnector("manifold", "manifold", MANIFOLD_SEEDS),
-  buildConnector("polymarket", "polymarket", POLYMARKET_SEEDS),
-  buildConnector("kalshi", "kalshi", KALSHI_SEEDS),
-  buildConnector("metaculus", "metaculus", METACULUS_SEEDS),
-  buildConnector("comex", "comex", COMEX_SEEDS),
-  {
-    name: "news_wires",
-    run: async (): Promise<ConnectorResult> => ({
-      name: "news_wires",
-      status: "ok",
-      fetchedAt: new Date(),
-      markets: [],
-      ambientSignals: NEWS_AMBIENT_SEEDS,
-      note: "Ambient news signals (mock).",
-    }),
-  },
+  buildConnector("manifold", "manifold", "prediction_market", MANIFOLD_SEEDS),
+  buildConnector("polymarket", "polymarket", "prediction_market", POLYMARKET_SEEDS),
+  buildConnector("kalshi", "kalshi", "prediction_market", KALSHI_SEEDS),
+  buildConnector("metaculus", "metaculus", "prediction_market", METACULUS_SEEDS),
+  buildConnector("comex", "comex", "metals", COMEX_SEEDS),
+  buildAmbientConnector("news_wires", NEWS_AMBIENT_SEEDS),
 ];

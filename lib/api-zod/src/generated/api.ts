@@ -725,6 +725,72 @@ export const UpdateRiskConfigResponse = zod.object({
 });
 
 /**
+ * Returns a JSON object with summary, sources, evidence, parallels, confidence, uncertainty, nextSteps, watchlist, candidate markets, and (when applicable) a concrete trade plan. Use this for analyst workflows that need a typed response; use the streaming chat endpoint for free-form prose.
+
+ * @summary Ask the agent for a structured, schema-validated answer
+ */
+export const structuredAgentQueryBodyQueryMax = 4000;
+
+export const StructuredAgentQueryBody = zod.object({
+  query: zod.string().min(1).max(structuredAgentQueryBodyQueryMax),
+});
+
+export const structuredAgentQueryResponseConfidenceMin = 0;
+export const structuredAgentQueryResponseConfidenceMax = 1;
+
+export const StructuredAgentQueryResponse = zod.object({
+  summary: zod.string(),
+  sources: zod.array(zod.string()),
+  evidence: zod.array(
+    zod.object({
+      kind: zod.enum(["observed", "inferred", "speculation"]),
+      statement: zod.string(),
+    }),
+  ),
+  parallels: zod.array(
+    zod.object({
+      label: zod.string(),
+      summary: zod.string(),
+      outcome: zod.string().optional(),
+    }),
+  ),
+  confidence: zod
+    .number()
+    .min(structuredAgentQueryResponseConfidenceMin)
+    .max(structuredAgentQueryResponseConfidenceMax),
+  uncertainty: zod.array(zod.string()),
+  nextSteps: zod.array(zod.string()),
+  watchlist: zod.array(zod.string()),
+  candidates: zod.array(
+    zod.object({
+      marketKey: zod.string(),
+      rationale: zod.string(),
+    }),
+  ),
+  tradePlan: zod
+    .union([
+      zod.object({
+        direction: zod.enum(["yes", "no"]),
+        sizeUsd: zod.number(),
+        entryZone: zod.object({
+          low: zod.number(),
+          high: zod.number(),
+        }),
+        cashOutLadder: zod.array(
+          zod.object({
+            price: zod.number(),
+            fraction: zod.number(),
+          }),
+        ),
+        exitStrategy: zod.string(),
+        invalidations: zod.array(zod.string()),
+      }),
+      zod.null(),
+    ])
+    .optional(),
+});
+
+/**
  * @summary List all conversations
  */
 export const ListAnthropicConversationsResponseItem = zod.object({

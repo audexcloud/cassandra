@@ -12,6 +12,7 @@ import {
   openclawJobs,
   riskConfig,
   auditLog,
+  connectorStatus,
 } from "@workspace/db";
 import { eq, sql } from "drizzle-orm";
 
@@ -219,6 +220,27 @@ async function runCycleInner(): Promise<void> {
           lastSyncAt: result.fetchedAt,
           note: result.note,
         });
+        // Mirror to the connector_status table so the OpenClaw command center
+        // surfaces the same view between cycles, across restarts.
+        await db
+          .insert(connectorStatus)
+          .values({
+            name: connector.name,
+            status: result.status,
+            mockDataMode: connector.mockDataMode,
+            lastSuccessfulRun: result.fetchedAt,
+            lastError: null,
+          })
+          .onConflictDoUpdate({
+            target: connectorStatus.name,
+            set: {
+              status: result.status,
+              mockDataMode: connector.mockDataMode,
+              lastSuccessfulRun: result.fetchedAt,
+              lastError: null,
+              updatedAt: new Date(),
+            },
+          });
         await recordJobFinish(
           jobId,
           "ok",
@@ -226,17 +248,30 @@ async function runCycleInner(): Promise<void> {
           `markets=${upserted} signals=${signalsInserted}`,
         );
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
         state.connectorStatus.set(connector.name, {
           status: "error",
           lastSyncAt: state.connectorStatus.get(connector.name)?.lastSyncAt ?? null,
-          note: err instanceof Error ? err.message : String(err),
+          note: errMsg,
         });
-        await recordJobFinish(
-          jobId,
-          "error",
-          jobStartedAt,
-          err instanceof Error ? err.message : String(err),
-        );
+        await db
+          .insert(connectorStatus)
+          .values({
+            name: connector.name,
+            status: "error",
+            mockDataMode: connector.mockDataMode,
+            lastSuccessfulRun: connector.lastSuccessfulRun,
+            lastError: errMsg,
+          })
+          .onConflictDoUpdate({
+            target: connectorStatus.name,
+            set: {
+              status: "error",
+              lastError: errMsg,
+              updatedAt: new Date(),
+            },
+          });
+        await recordJobFinish(jobId, "error", jobStartedAt, errMsg);
         logger.warn({ connector: connector.name, err }, "connector run failed");
       }
     }

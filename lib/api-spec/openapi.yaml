@@ -397,6 +397,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/RiskConfig"
 
+  /agent/structured-query:
+    post:
+      operationId: structuredAgentQuery
+      tags: [agent]
+      summary: Ask the agent for a structured, schema-validated answer
+      description: >
+        Returns a JSON object with summary, sources, evidence, parallels,
+        confidence, uncertainty, nextSteps, watchlist, candidate markets,
+        and (when applicable) a concrete trade plan. Use this for analyst
+        workflows that need a typed response; use the streaming chat
+        endpoint for free-form prose.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StructuredAgentQueryBody"
+      responses:
+        "200":
+          description: Structured answer
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StructuredAgentResponse"
+        "400":
+          description: Bad request
+        "502":
+          description: Agent failed to return valid structured JSON
+
   /anthropic/conversations:
     get:
       operationId: listAnthropicConversations
@@ -1047,6 +1076,123 @@ components:
         minEdgeScore:
           type: number
           minimum: 0
+
+    StructuredAgentQueryBody:
+      type: object
+      required: [query]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 4000
+
+    StructuredAgentEvidence:
+      type: object
+      required: [kind, statement]
+      properties:
+        kind:
+          type: string
+          enum: [observed, inferred, speculation]
+        statement:
+          type: string
+
+    StructuredAgentParallel:
+      type: object
+      required: [label, summary]
+      properties:
+        label:
+          type: string
+        summary:
+          type: string
+        outcome:
+          type: string
+
+    StructuredAgentCandidate:
+      type: object
+      required: [marketKey, rationale]
+      properties:
+        marketKey:
+          type: string
+        rationale:
+          type: string
+
+    StructuredAgentTradePlan:
+      type: object
+      required: [direction, sizeUsd, entryZone, cashOutLadder, exitStrategy, invalidations]
+      properties:
+        direction:
+          type: string
+          enum: [yes, no]
+        sizeUsd:
+          type: number
+        entryZone:
+          type: object
+          required: [low, high]
+          properties:
+            low: { type: number }
+            high: { type: number }
+        cashOutLadder:
+          type: array
+          items:
+            type: object
+            required: [price, fraction]
+            properties:
+              price: { type: number }
+              fraction: { type: number }
+        exitStrategy:
+          type: string
+        invalidations:
+          type: array
+          items:
+            type: string
+
+    StructuredAgentResponse:
+      type: object
+      required:
+        - summary
+        - sources
+        - evidence
+        - parallels
+        - confidence
+        - uncertainty
+        - nextSteps
+        - watchlist
+        - candidates
+      properties:
+        summary:
+          type: string
+        sources:
+          type: array
+          items: { type: string }
+        evidence:
+          type: array
+          items:
+            $ref: "#/components/schemas/StructuredAgentEvidence"
+        parallels:
+          type: array
+          items:
+            $ref: "#/components/schemas/StructuredAgentParallel"
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        uncertainty:
+          type: array
+          items: { type: string }
+        nextSteps:
+          type: array
+          items: { type: string }
+        watchlist:
+          type: array
+          items: { type: string }
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/StructuredAgentCandidate"
+        tradePlan:
+          oneOf:
+            - $ref: "#/components/schemas/StructuredAgentTradePlan"
+            - type: "null"
 
     AnthropicConversation:
       type: object

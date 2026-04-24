@@ -8,3 +8,4 @@ export * from "./openclawJobs";
 export * from "./riskConfig";
 export * from "./agentMemory";
 export * from "./auditLog";
+export * from "./cassandraExtended";

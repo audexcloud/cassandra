@@ -42,6 +42,8 @@ import type {
   RiskConfig,
   SendAnthropicMessageBody,
   SignalEvent,
+  StructuredAgentQueryBody,
+  StructuredAgentResponse,
   UpdateRiskConfigBody,
 } from "./api.schemas";
 
@@ -1581,6 +1583,95 @@ export const useUpdateRiskConfig = <
   TContext
 > => {
   return useMutation(getUpdateRiskConfigMutationOptions(options));
+};
+
+/**
+ * Returns a JSON object with summary, sources, evidence, parallels, confidence, uncertainty, nextSteps, watchlist, candidate markets, and (when applicable) a concrete trade plan. Use this for analyst workflows that need a typed response; use the streaming chat endpoint for free-form prose.
+
+ * @summary Ask the agent for a structured, schema-validated answer
+ */
+export const getStructuredAgentQueryUrl = () => {
+  return `/api/agent/structured-query`;
+};
+
+export const structuredAgentQuery = async (
+  structuredAgentQueryBody: StructuredAgentQueryBody,
+  options?: RequestInit,
+): Promise<StructuredAgentResponse> => {
+  return customFetch<StructuredAgentResponse>(getStructuredAgentQueryUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(structuredAgentQueryBody),
+  });
+};
+
+export const getStructuredAgentQueryMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof structuredAgentQuery>>,
+    TError,
+    { data: BodyType<StructuredAgentQueryBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof structuredAgentQuery>>,
+  TError,
+  { data: BodyType<StructuredAgentQueryBody> },
+  TContext
+> => {
+  const mutationKey = ["structuredAgentQuery"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof structuredAgentQuery>>,
+    { data: BodyType<StructuredAgentQueryBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return structuredAgentQuery(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StructuredAgentQueryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof structuredAgentQuery>>
+>;
+export type StructuredAgentQueryMutationBody =
+  BodyType<StructuredAgentQueryBody>;
+export type StructuredAgentQueryMutationError = ErrorType<void>;
+
+/**
+ * @summary Ask the agent for a structured, schema-validated answer
+ */
+export const useStructuredAgentQuery = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof structuredAgentQuery>>,
+    TError,
+    { data: BodyType<StructuredAgentQueryBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof structuredAgentQuery>>,
+  TError,
+  { data: BodyType<StructuredAgentQueryBody> },
+  TContext
+> => {
+  return useMutation(getStructuredAgentQueryMutationOptions(options));
 };
 
 /**

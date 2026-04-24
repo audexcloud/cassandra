@@ -8,6 +8,7 @@ import journalRouter from "./journal";
 import openclawRouter from "./openclaw";
 import riskRouter from "./risk";
 import anthropicRouter from "./anthropic";
+import agentStructuredRouter from "./agentStructured";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(journalRouter);
 router.use(openclawRouter);
 router.use(riskRouter);
 router.use(anthropicRouter);
+router.use(agentStructuredRouter);
 
 export default router;

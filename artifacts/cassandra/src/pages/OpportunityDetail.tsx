@@ -86,6 +86,48 @@ export default function OpportunityDetail() {
   const recommendedSize = bankroll * opp.kellyFraction;
   const maxSize = riskConfig?.maxPositionUsd || recommendedSize * 2; // Fallback cap
 
+  // "Why not trade?" gate evaluation — mirrors evaluateRiskGate() on the server
+  // so the operator sees every blocking reason BEFORE attempting to submit.
+  // The server still re-validates on POST /paper-trades; this is a UX shortcut.
+  const proposedSize = form.watch("sizeUsd") || 0;
+  const gateReasons: string[] = [];
+  if (riskConfig?.killSwitchEngaged) {
+    gateReasons.push("Kill switch is engaged — all new trades are blocked.");
+  }
+  if (riskConfig?.liveExecutionEnabled) {
+    gateReasons.push("Live execution is permanently disabled in this build.");
+  }
+  if (riskConfig && proposedSize > (riskConfig.maxPositionUsd || 0)) {
+    gateReasons.push(
+      `Size ${formatCurrency(proposedSize)} exceeds max position ${formatCurrency(riskConfig.maxPositionUsd || 0)}.`,
+    );
+  }
+  if (
+    typeof riskConfig?.minConfidence === "number" &&
+    opp.confidence < riskConfig.minConfidence
+  ) {
+    gateReasons.push(
+      `Confidence ${formatPercent(opp.confidence)} below floor ${formatPercent(riskConfig.minConfidence)}.`,
+    );
+  }
+  if (
+    typeof riskConfig?.minLiquidityUsd === "number" &&
+    opp.liquidity < riskConfig.minLiquidityUsd
+  ) {
+    gateReasons.push(
+      `Liquidity ${formatCurrency(opp.liquidity)} below floor ${formatCurrency(riskConfig.minLiquidityUsd)}.`,
+    );
+  }
+  if (
+    typeof riskConfig?.minEdgeScore === "number" &&
+    opp.edgeScore < riskConfig.minEdgeScore
+  ) {
+    gateReasons.push(
+      `Edge score ${opp.edgeScore.toFixed(3)} below floor ${riskConfig.minEdgeScore.toFixed(3)}.`,
+    );
+  }
+  const tradeBlocked = gateReasons.length > 0;
+
   const onSubmit = (data: TradeFormValues) => {
     createTrade.mutate({
       data: {
@@ -308,6 +350,25 @@ export default function OpportunityDetail() {
                       Live execution disabled. Paper only.
                     </AlertDescription>
                   </Alert>
+
+                  {tradeBlocked && (
+                    <Alert variant="destructive" className="bg-destructive/10 border-destructive/30">
+                      <ShieldAlert className="h-4 w-4 shrink-0" />
+                      <AlertTitle className="uppercase tracking-wider font-bold text-xs">
+                        Why not trade?
+                      </AlertTitle>
+                      <AlertDescription className="text-xs mt-1">
+                        <ul className="list-disc pl-4 space-y-0.5">
+                          {gateReasons.map((r, i) => (
+                            <li key={i}>{r}</li>
+                          ))}
+                        </ul>
+                        <div className="mt-2 text-[10px] uppercase tracking-wider opacity-70">
+                          Adjust risk floors in Settings or change the size to clear these.
+                        </div>
+                      </AlertDescription>
+                    </Alert>
+                  )}
                   
                   <Form {...form}>
                     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -399,9 +460,13 @@ export default function OpportunityDetail() {
                           type="submit" 
                           className="w-full uppercase font-bold tracking-wider" 
                           size="sm"
-                          disabled={createTrade.isPending}
+                          disabled={createTrade.isPending || tradeBlocked}
                         >
-                          {createTrade.isPending ? "Executing..." : <><Hand className="w-4 h-4 mr-2" /> Commit Position</>}
+                          {createTrade.isPending
+                            ? "Executing..."
+                            : tradeBlocked
+                              ? <><ShieldAlert className="w-4 h-4 mr-2" /> Blocked by Risk Gate</>
+                              : <><Hand className="w-4 h-4 mr-2" /> Commit Position</>}
                         </Button>
                       </div>
                     </form>
