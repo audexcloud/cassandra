@@ -1,4 +1,5 @@
 {
+  "framework": "vite",
   "installCommand": "pnpm install --frozen-lockfile",
   "buildCommand": "pnpm -w run typecheck:libs && pnpm --filter @workspace/cassandra run build",
   "outputDirectory": "artifacts/cassandra/dist/public",
