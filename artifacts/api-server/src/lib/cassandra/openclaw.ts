@@ -614,7 +614,7 @@ async function runScheduledJobs(): Promise<void> {
         // Real work: pull a fresh snapshot for every tracked Polymarket
         // wallet, recompute rank, and emit any new mirror suggestions.
         const r = await refreshWinnerWallets();
-        message = `wallets=${r.walletsRefreshed} snapshots=${r.snapshotsInserted} suggestions=${r.suggestionsCreated}`;
+        message = `wallets=${r.walletsRefreshed} newDiscovered=${r.newWalletsDiscovered} snapshots=${r.snapshotsInserted} suggestions=${r.suggestionsCreated}`;
       } else if (kind === "tune_ambient_shift_caps") {
         // Mine signal_events × opportunity_score_snapshots to derive the
         // per-domain empirical p90 of |Δ marketProb| in the window

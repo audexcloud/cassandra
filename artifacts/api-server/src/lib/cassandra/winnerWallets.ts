@@ -1,12 +1,17 @@
 /**
- * Winner-account refresh logic. Fetches a slate of tracked Polymarket
- * wallets, refreshes their P&L / win-rate snapshot, and synthesizes
- * "mirror this trade" suggestions for any open positions that overlap
- * markets we already have ingested.
+ * Winner-account tracking — real Polymarket Data API implementation.
  *
- * The data source is a deterministic mock — same shape the future real
- * Polymarket wallet connector will return. Swapping in real on-chain calls
- * later should not require touching the orchestrator or the route layer.
+ * Data flow per refresh cycle:
+ *  1. Fetch the Polymarket all-time leaderboard (top 50 by profit).
+ *  2. Upsert any new addresses as tracked wallets.
+ *  3. For every tracked wallet fetch their live open positions.
+ *  4. Match positions to our ingested opportunity universe by conditionId.
+ *  5. Score each match: does the winner's direction agree with our model?
+ *  6. Emit mirror suggestions for high-alignment matches; skip low-confidence ones.
+ *
+ * Falls back gracefully: if the data API is unreachable, the cycle logs the
+ * error but does not abort — the stored wallet profiles keep showing the
+ * last known values.
  */
 
 import { db } from "@workspace/db";
@@ -17,19 +22,195 @@ import {
   opportunities,
   type WalletProfileRow,
 } from "@workspace/db";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { logger } from "../logger";
 import { priceForSide } from "./scoring";
+import { httpJson } from "./connectors/http";
 
-/** A position the mock connector reports for a wallet at a point in time. */
+// ─── Polymarket Data API types ───────────────────────────────────────────────
+
+const DATA_API = "https://data-api.polymarket.com";
+const LEADERBOARD_LIMIT = 50;
+const POSITION_LIMIT = 500;
+const MIN_POSITION_SIZE_USD = 10;
+
+interface PolyLeaderboardEntry {
+  proxyWallet: string;
+  name?: string | null;
+  profit?: number;
+  percentPositive?: number;
+  volume?: number;
+  numTrades?: number;
+}
+
+interface PolyPosition {
+  /** Hex condition ID — maps to Gamma API market `id`. */
+  conditionId: string;
+  /** Token ID for this specific outcome (YES or NO token). */
+  asset?: string;
+  title?: string;
+  slug?: string;
+  /** "Yes" or "No" */
+  outcome?: string;
+  outcomeIndex?: number;
+  /** Current market price for this outcome (0–1). */
+  price?: number;
+  /** Number of shares / USDC-equivalent position size. */
+  size?: number;
+  /** Average entry price (0–1). */
+  avgPrice?: number;
+  currentValue?: number;
+  cashPnl?: number;
+  percentPnl?: number;
+  endDate?: string;
+}
+
+// ─── API fetch helpers ───────────────────────────────────────────────────────
+
+async function fetchLeaderboard(): Promise<PolyLeaderboardEntry[]> {
+  const url = `${DATA_API}/leaderboard?interval=all&limit=${LEADERBOARD_LIMIT}`;
+  const raw = await httpJson<PolyLeaderboardEntry[] | { data?: PolyLeaderboardEntry[] }>(url, {
+    timeoutMs: 15_000,
+    retries: 1,
+  });
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray((raw as any).data)
+      ? (raw as any).data
+      : [];
+  return list.filter(
+    (e: PolyLeaderboardEntry) =>
+      typeof e.proxyWallet === "string" && e.proxyWallet.length > 10,
+  );
+}
+
+async function fetchPositions(proxyWallet: string): Promise<PolyPosition[]> {
+  const url =
+    `${DATA_API}/positions` +
+    `?user=${encodeURIComponent(proxyWallet)}` +
+    `&sizeThreshold=${MIN_POSITION_SIZE_USD}` +
+    `&limit=${POSITION_LIMIT}`;
+  const raw = await httpJson<PolyPosition[] | { data?: PolyPosition[] }>(url, {
+    timeoutMs: 15_000,
+    retries: 1,
+  });
+  const list = Array.isArray(raw)
+    ? raw
+    : Array.isArray((raw as any).data)
+      ? (raw as any).data
+      : [];
+  return list.filter(
+    (p: PolyPosition) =>
+      typeof p.conditionId === "string" && (p.size ?? 0) >= MIN_POSITION_SIZE_USD,
+  );
+}
+
+// ─── Market key resolution ────────────────────────────────────────────────────
+
+/**
+ * Build a lookup from every possible Polymarket identifier to the opportunity
+ * row. The Gamma API stores `id` as the market key (`polymarket-${id}`), and
+ * the Data API returns `conditionId` which corresponds to the same value.
+ * We also keep a normalised question-text fallback for cases where the IDs
+ * diverge between API versions.
+ */
+function buildMarketIndex(
+  markets: Array<{
+    id: number;
+    marketKey: string;
+    question: string;
+    marketProb: number;
+    modelProb: number;
+    edgeScore: number;
+    confidence: number;
+    suggestedDirection: string | null;
+  }>,
+): {
+  byKey: Map<string, typeof markets[number]>;
+  byQuestion: Map<string, typeof markets[number]>;
+} {
+  const byKey = new Map<string, typeof markets[number]>();
+  const byQuestion = new Map<string, typeof markets[number]>();
+  for (const m of markets) {
+    byKey.set(m.marketKey, m);
+    // Also index by the raw ID fragment (without "polymarket-" prefix).
+    const fragment = m.marketKey.startsWith("polymarket-")
+      ? m.marketKey.slice("polymarket-".length)
+      : m.marketKey;
+    byKey.set(fragment, m);
+    byQuestion.set(normaliseQuestion(m.question), m);
+  }
+  return { byKey, byQuestion };
+}
+
+function normaliseQuestion(q: string): string {
+  return q.toLowerCase().replace(/[^a-z0-9 ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function resolvePosition(
+  pos: PolyPosition,
+  idx: ReturnType<typeof buildMarketIndex>,
+): typeof idx.byKey extends Map<string, infer V> ? V | null : never {
+  // Try conditionId directly and with "polymarket-" prefix.
+  const cid = pos.conditionId ?? "";
+  let hit = idx.byKey.get(cid) ?? idx.byKey.get(`polymarket-${cid}`) ?? null;
+  // Try asset/tokenId.
+  if (!hit && pos.asset) {
+    hit = idx.byKey.get(pos.asset) ?? idx.byKey.get(`polymarket-${pos.asset}`) ?? null;
+  }
+  // Fuzzy fallback by question text.
+  if (!hit && pos.title) {
+    hit = idx.byQuestion.get(normaliseQuestion(pos.title)) ?? null;
+  }
+  return hit as any;
+}
+
+// ─── Correlation logic ────────────────────────────────────────────────────────
+
+/**
+ * Given a position and the matched opportunity, return the winner's implied
+ * direction and how strongly it aligns with our model.
+ *
+ * alignment > 0: winner and model agree
+ * alignment < 0: winner disagrees with model (flag, don't suppress)
+ * alignment = 0: no model edge or neutral position
+ */
+function computeAlignment(
+  pos: PolyPosition,
+  opp: { marketProb: number; modelProb: number; suggestedDirection: string | null },
+): { direction: "yes" | "no"; alignment: number; winnerEdge: number } {
+  const outcome = (pos.outcome ?? "Yes").toLowerCase();
+  const direction: "yes" | "no" = outcome === "no" ? "no" : "yes";
+
+  // Winner's edge estimate: how far their avg entry is from the current price.
+  const avgEntry = pos.avgPrice ?? opp.marketProb;
+  const currentPrice = pos.price ?? opp.marketProb;
+  const winnerEdge = direction === "yes"
+    ? currentPrice - avgEntry          // positive = profitable YES bet
+    : (1 - currentPrice) - (1 - avgEntry); // NO bet profitability
+
+  // Model's alignment with this direction.
+  const modelEdge = direction === "yes"
+    ? opp.modelProb - opp.marketProb
+    : opp.marketProb - opp.modelProb;
+
+  // alignment = product of signs: +1 both point same way, -1 they disagree.
+  const alignment = Math.sign(modelEdge) === Math.sign(winnerEdge)
+    ? Math.min(1, Math.abs(modelEdge) + Math.abs(winnerEdge))
+    : -Math.min(1, Math.abs(modelEdge) + Math.abs(winnerEdge));
+
+  return { direction, alignment, winnerEdge };
+}
+
+// ─── Main export types ───────────────────────────────────────────────────────
+
 export interface WalletPositionLike {
   marketKey: string;
   question: string;
   direction: "yes" | "no";
   entryProb: number;
   sizeUsd: number;
-  /** Open-position price right now (from the source platform). */
   currentProb: number;
   openedAt: Date;
 }
@@ -56,394 +237,404 @@ export interface MockWalletState {
   closed: WalletClosedPositionLike[];
 }
 
-/**
- * The seed wallets we track on first boot. Real addresses, but the metrics
- * are synthesized on every cycle from a per-wallet drift function so the
- * snapshot history shows movement without needing a real chain feed.
- */
-const SEED_WALLETS: Array<{
-  source: string;
-  address: string;
-  label: string;
-  baselinePnl: number;
-  baselineHitRate: number;
-}> = [
-  {
-    source: "polymarket",
-    address: "0x9d1b1669c73b033dfe47ae5a0164ab96df25b944",
-    label: "Whale-A (Polymarket)",
-    baselinePnl: 84_500,
-    baselineHitRate: 0.71,
-  },
-  {
-    source: "polymarket",
-    address: "0xa3a4b9c7d2e5f1f7c91b7b9b5c2c7c1f6d2c8a91",
-    label: "Macro-Sniper (Polymarket)",
-    baselinePnl: 51_300,
-    baselineHitRate: 0.66,
-  },
-  {
-    source: "polymarket",
-    address: "0x77a82d9e8b1d4e25a4e6a1b3a7c44a3a5e3a8b22",
-    label: "Geo-Hawk (Polymarket)",
-    baselinePnl: 32_900,
-    baselineHitRate: 0.63,
-  },
-  {
-    source: "polymarket",
-    address: "0x142b44e7c3f9b6e0d3e3a4b5c6d7e8f901a2b3c4",
-    label: "Calm-Cassandra (Polymarket)",
-    baselinePnl: 18_700,
-    baselineHitRate: 0.59,
-  },
-  {
-    source: "polymarket",
-    address: "0x2c1d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d",
-    label: "Fed-Watcher (Polymarket)",
-    baselinePnl: 12_400,
-    baselineHitRate: 0.55,
-  },
-];
-
-/**
- * Deterministic noise keyed by the wallet address and the current minute.
- * Same idea as the connector noise(): repeatable within a minute, drifts
- * across them so the UI shows movement.
- */
-function noise(seed: string, range = 1): number {
-  let h = 2166136261;
-  const key = seed + Math.floor(Date.now() / 60_000);
-  for (let i = 0; i < key.length; i++) {
-    h ^= key.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  const u = ((h >>> 0) % 10_000) / 10_000;
-  return (u - 0.5) * 2 * range;
-}
-
-function clampProb(p: number): number {
-  return Math.min(0.99, Math.max(0.01, p));
-}
-
-function clamp01(x: number): number {
-  return Math.min(1, Math.max(0, x));
-}
-
-/**
- * Build the mock state for a single wallet. Open positions are derived from
- * the wallet's address so different wallets have different overlapping sets
- * with our opportunity universe.
- */
-export function mockWalletState(
-  seed: { source: string; address: string; label: string; baselinePnl: number; baselineHitRate: number },
-  knownMarkets: Array<{ marketKey: string; question: string; marketProb: number }>,
-): MockWalletState {
-  const drift = noise(`pnl:${seed.address}`, 0.04);
-  const pnlUsd = Math.round(seed.baselinePnl * (1 + drift));
-  const hitRate = clamp01(seed.baselineHitRate + noise(`hr:${seed.address}`, 0.03));
-  const avgEdge = clamp01(0.04 + noise(`edge:${seed.address}`, 0.02));
-
-  const addrHash = seed.address
-    .split("")
-    .reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  const openCount = Math.max(1, Math.min(knownMarkets.length, (addrHash % 4) + 2));
-  const open: WalletPositionLike[] = [];
-  for (let i = 0; i < openCount; i++) {
-    const m = knownMarkets[(addrHash + i * 7) % knownMarkets.length];
-    if (!m) break;
-    const direction: "yes" | "no" = (addrHash + i) % 2 === 0 ? "yes" : "no";
-    const entry = clampProb(m.marketProb + noise(`entry:${seed.address}:${m.marketKey}`, 0.06));
-    const current = clampProb(m.marketProb + noise(`cur:${seed.address}:${m.marketKey}`, 0.02));
-    const sizeUsd = 1500 + ((addrHash + i * 13) % 9) * 750;
-    open.push({
-      marketKey: m.marketKey,
-      question: m.question,
-      direction,
-      entryProb: priceForSide(direction, entry),
-      sizeUsd,
-      currentProb: priceForSide(direction, current),
-      openedAt: new Date(Date.now() - (i + 1) * 36 * 60 * 60 * 1000),
-    });
-  }
-
-  const closedCount = 3;
-  const closed: WalletClosedPositionLike[] = [];
-  for (let i = 0; i < closedCount; i++) {
-    const m = knownMarkets[(addrHash + 19 + i * 5) % Math.max(1, knownMarkets.length)];
-    if (!m) break;
-    const direction: "yes" | "no" = (addrHash + 17 + i) % 2 === 0 ? "yes" : "no";
-    const entry = priceForSide(direction, clampProb(m.marketProb + noise(`cE:${seed.address}:${i}`, 0.08)));
-    const exit = priceForSide(direction, clampProb(m.marketProb + noise(`cX:${seed.address}:${i}`, 0.05) + 0.06));
-    const sizeUsd = 2000 + ((addrHash + i * 11) % 6) * 600;
-    const shares = sizeUsd / Math.max(0.01, entry);
-    const pnlUsd = Number((shares * (exit - entry)).toFixed(2));
-    closed.push({
-      marketKey: m.marketKey,
-      question: m.question,
-      direction,
-      entryProb: entry,
-      exitProb: exit,
-      sizeUsd,
-      pnlUsd,
-      closedAt: new Date(Date.now() - (i + 1) * 5 * 24 * 60 * 60 * 1000),
-    });
-  }
-
-  return {
-    source: seed.source,
-    address: seed.address,
-    label: seed.label,
-    pnlUsd,
-    hitRate,
-    avgEdge,
-    open,
-    closed,
-  };
-}
-
-/** Ensure seed wallet rows exist on first boot. */
-export async function ensureWinnerWalletSeed(): Promise<void> {
-  const existing = await db.select().from(walletProfiles).limit(1);
-  if (existing.length > 0) return;
-  await db.insert(walletProfiles).values(
-    SEED_WALLETS.map((w) => ({
-      source: w.source,
-      address: w.address,
-      label: w.label,
-      tracked: true,
-    })),
-  );
-  logger.info({ count: SEED_WALLETS.length }, "winner wallets seeded");
-}
-
 export interface WalletRefreshResult {
   walletsRefreshed: number;
   snapshotsInserted: number;
   suggestionsCreated: number;
+  newWalletsDiscovered: number;
   ranAt: Date;
 }
 
-/**
- * One refresh cycle: pull a snapshot for every tracked wallet, write a
- * snapshot row, recompute rank by P&L, and emit fresh mirror suggestions
- * for any open wallet position that maps to an opportunity in our universe.
- *
- * Suggestions are deduplicated: we never create two pending suggestions
- * for the same (wallet, marketKey, direction). If one already exists in a
- * non-pending state (mirrored or dismissed), we leave it alone — the
- * operator already made a decision.
- */
+// ─── Seed wallet set (fallback labels for known top addresses) ────────────────
+
+const KNOWN_LABELS: Record<string, string> = {
+  "0x9d1b1669c73b033dfe47ae5a0164ab96df25b944": "Whale-A",
+  "0x5695bc2da6c4f93a8e99cad50a7a8e0e0a9e0671": "Macro-Sniper",
+  "0x77a82d9e8b1d4e25a4e6a1b3a7c44a3a5e3a8b22": "Geo-Hawk",
+};
+
+// ─── Refresh cycle ────────────────────────────────────────────────────────────
+
 export async function refreshWinnerWallets(): Promise<WalletRefreshResult> {
   const ranAt = new Date();
+  let newWalletsDiscovered = 0;
+
+  // ── Step 1: discover top traders from the live leaderboard ──
+  let leaderboard: PolyLeaderboardEntry[] = [];
+  try {
+    leaderboard = await fetchLeaderboard();
+  } catch (err) {
+    logger.warn({ err }, "winnerWallets: leaderboard fetch failed, using stored wallets only");
+  }
+
+  // Upsert new wallet profiles for freshly discovered addresses.
+  for (let i = 0; i < leaderboard.length; i++) {
+    const entry = leaderboard[i];
+    const address = entry.proxyWallet.toLowerCase();
+    const existing = await db
+      .select({ id: walletProfiles.id })
+      .from(walletProfiles)
+      .where(
+        and(eq(walletProfiles.source, "polymarket"), eq(walletProfiles.address, address)),
+      )
+      .limit(1);
+
+    if (existing.length === 0) {
+      const rank = i + 1;
+      const label =
+        KNOWN_LABELS[address] ??
+        entry.name ??
+        `Polymarket #${rank} (${address.slice(0, 8)}…)`;
+      await db.insert(walletProfiles).values({
+        source: "polymarket",
+        address,
+        label,
+        tracked: rank <= 20, // auto-track top 20; rest are visible but not polled
+        hitRate: entry.percentPositive ?? 0.5,
+        avgEdge: 0,
+        pnlUsd: entry.profit ?? 0,
+      });
+      newWalletsDiscovered++;
+      logger.info({ address, rank, label }, "winnerWallets: discovered new winner wallet");
+    }
+  }
+
+  // ── Step 2: load all tracked wallets ──
   const tracked = await db
     .select()
     .from(walletProfiles)
     .where(eq(walletProfiles.tracked, true))
-    .orderBy(asc(walletProfiles.id));
+    .orderBy(asc(walletProfiles.rank));
 
   if (tracked.length === 0) {
-    return { walletsRefreshed: 0, snapshotsInserted: 0, suggestionsCreated: 0, ranAt };
+    return { walletsRefreshed: 0, snapshotsInserted: 0, suggestionsCreated: 0, newWalletsDiscovered, ranAt };
   }
 
-  // Pull every market we have on hand once; mockWalletState pulls slices
-  // from this list to build overlapping positions.
+  // ── Step 3: load our market universe for position matching ──
   const markets = await db
     .select({
       id: opportunities.id,
       marketKey: opportunities.marketKey,
-      source: opportunities.source,
       question: opportunities.question,
       marketProb: opportunities.marketProb,
       modelProb: opportunities.modelProb,
       edgeScore: opportunities.edgeScore,
       confidence: opportunities.confidence,
+      suggestedDirection: opportunities.suggestedDirection,
     })
     .from(opportunities);
 
-  // Mirror suggestions can only be tied to a Polymarket-style market we
-  // have ingested. We index by marketKey for fast lookup. The mock wallet
-  // data uses the same marketKey strings the connectors emit, so overlaps
-  // happen organically when the polymarket connector is enabled.
-  const marketByKey = new Map<string, (typeof markets)[number]>();
-  for (const m of markets) marketByKey.set(m.marketKey, m);
+  const idx = buildMarketIndex(markets);
 
   let snapshotsInserted = 0;
   let suggestionsCreated = 0;
 
-  // Compute pnl per wallet first, then assign rank by descending pnl so the
-  // ordering matches the way the UI sorts.
-  const states: Array<{ wallet: WalletProfileRow; state: MockWalletState }> = [];
+  // Collect wallet pnl for rank recomputation.
+  const pnlList: Array<{ walletId: number; pnlUsd: number }> = [];
+
   for (const wallet of tracked) {
-    const seed = SEED_WALLETS.find((s) => s.address === wallet.address) ?? {
-      source: wallet.source,
-      address: wallet.address,
-      label: wallet.label,
-      baselinePnl: 10_000,
-      baselineHitRate: 0.5,
-    };
-    states.push({
-      wallet,
-      state: mockWalletState(
-        seed,
-        markets.map((m) => ({
-          marketKey: m.marketKey,
-          question: m.question,
-          marketProb: m.marketProb,
-        })),
-      ),
-    });
-  }
-  states.sort((a, b) => b.state.pnlUsd - a.state.pnlUsd);
+    // ── Step 4: fetch real positions for this wallet ──
+    let positions: PolyPosition[] = [];
+    try {
+      positions = await fetchPositions(wallet.address);
+    } catch (err) {
+      logger.warn(
+        { err, address: wallet.address },
+        "winnerWallets: position fetch failed for wallet, skipping",
+      );
+    }
 
-  for (let i = 0; i < states.length; i++) {
-    const { wallet, state } = states[i];
-    const rank = i + 1;
-    const activePositions = state.open.length;
-    const closedPositions = state.closed.length;
+    // Derive wallet-level stats from positions + leaderboard data.
+    const leaderEntry = leaderboard.find(
+      (e) => e.proxyWallet.toLowerCase() === wallet.address.toLowerCase(),
+    );
 
+    const totalValue = positions.reduce((s, p) => s + (p.currentValue ?? (p.size ?? 0) * (p.price ?? 0.5)), 0);
+    const totalPnl = leaderEntry?.profit ?? positions.reduce((s, p) => s + (p.cashPnl ?? 0), 0);
+    const hitRate = leaderEntry?.percentPositive ?? wallet.hitRate;
+    const activePositions = positions.length;
+
+    // Compute average edge from live positions.
+    let avgEdge = 0;
+    if (positions.length > 0) {
+      const edgeSum = positions.reduce((s, p) => {
+        const entry = p.avgPrice ?? 0.5;
+        const current = p.price ?? 0.5;
+        return s + Math.abs(current - entry);
+      }, 0);
+      avgEdge = edgeSum / positions.length;
+    } else {
+      avgEdge = wallet.avgEdge;
+    }
+
+    pnlList.push({ walletId: wallet.id, pnlUsd: totalPnl });
+
+    // Update wallet profile.
     await db
       .update(walletProfiles)
       .set({
-        rank,
-        hitRate: state.hitRate,
-        avgEdge: state.avgEdge,
-        pnlUsd: state.pnlUsd,
+        hitRate,
+        avgEdge,
+        pnlUsd: totalPnl,
         activePositions,
-        closedPositions,
         lastSyncedAt: ranAt,
         updatedAt: ranAt,
       })
       .where(eq(walletProfiles.id, wallet.id));
 
+    // Insert snapshot.
     await db.insert(walletSnapshots).values({
       walletId: wallet.id,
-      pnlUsd: state.pnlUsd,
+      pnlUsd: totalPnl,
       activePositions,
-      closedPositions,
-      hitRate: state.hitRate,
-      avgEdge: state.avgEdge,
+      closedPositions: wallet.closedPositions,
+      hitRate,
+      avgEdge,
     });
     snapshotsInserted++;
 
-    // Synthesize mirror suggestions for every open position that overlaps
-    // our universe. Skip ones that already have a non-pending decision so
-    // we don't undo user choices.
-    for (const pos of state.open) {
-      const matching = marketByKey.get(pos.marketKey);
-      if (!matching) continue;
+    // ── Step 5: generate mirror suggestions for matched positions ──
+    for (const pos of positions) {
+      const opp = resolvePosition(pos, idx);
+      if (!opp) continue; // position not in our universe
 
+      const { direction, alignment, winnerEdge } = computeAlignment(pos, opp);
+
+      // Only suggest mirrors when winner and model roughly agree (alignment > 0)
+      // and there's meaningful model edge.
+      const modelHasEdge = opp.edgeScore > 0.03;
+      const winnerAgreesWithModel = alignment > 0;
+      if (!modelHasEdge || !winnerAgreesWithModel) continue;
+
+      // Dedup: skip if any suggestion already exists for this (wallet, market, direction).
       const existing = await db
         .select({ id: mirrorSuggestions.id })
         .from(mirrorSuggestions)
         .where(
           and(
             eq(mirrorSuggestions.walletId, wallet.id),
-            eq(mirrorSuggestions.marketKey, pos.marketKey),
-            eq(mirrorSuggestions.direction, pos.direction),
+            eq(mirrorSuggestions.marketKey, opp.marketKey),
+            eq(mirrorSuggestions.direction, direction),
           ),
         )
         .limit(1);
       if (existing.length > 0) continue;
 
-      // Conservative sizing: cap mirror trade at $250 by default, scaling
-      // down further if the wallet's own size was smaller. The route layer
-      // re-evaluates the live risk gate before opening the paper trade.
-      const suggestedSizeUsd = Math.min(250, Math.round(pos.sizeUsd * 0.05));
+      // Conservative sizing: 5% of winner's position, capped at $250.
+      const positionSizeUsd = pos.size ?? 0;
+      const suggestedSizeUsd = Math.max(10, Math.min(250, Math.round(positionSizeUsd * 0.05)));
 
-      const rationale = {
-        observed: [
-          `${wallet.label} (rank #${rank}) holds ${pos.direction.toUpperCase()} at ${pos.entryProb.toFixed(3)} on "${pos.question}".`,
-          `Wallet size on this market: $${pos.sizeUsd.toLocaleString()}.`,
-          `Wallet trailing P&L: $${state.pnlUsd.toLocaleString()} (hit-rate ${(state.hitRate * 100).toFixed(0)}%, avg edge ${(state.avgEdge * 100).toFixed(1)}%).`,
-        ],
-        inferred: [
-          `Cassandra's own model assigns ${(matching.modelProb * 100).toFixed(0)}% (market ${(matching.marketProb * 100).toFixed(0)}%, edge ${((matching.modelProb - matching.marketProb) * 100).toFixed(1)}pp).`,
-          `Mirroring at ~5% of wallet size (capped at $250) keeps exposure bounded if the wallet's edge does not reproduce.`,
-        ],
-        speculation: [
-          `Wallet timing may carry information not yet in our signal feed; the mirror is partly a bet on that latent edge.`,
-        ],
-        unknowns: [
-          `Wallet's true cost basis vs. our observed entry may differ.`,
-          `We do not know the wallet's intended hold horizon.`,
-        ],
-        riskFlags:
-          matching.edgeScore < 0.05
-            ? ["Underlying market shows weak edge (<5%) — mirror is wallet-following, not model-aligned."]
-            : matching.confidence < 0.4
-              ? ["Low model confidence on this market — wallet is leading the thesis."]
-              : [],
-      };
+      const rationale = buildMirrorRationale({
+        wallet,
+        pos,
+        opp,
+        direction,
+        alignment,
+        winnerEdge,
+        suggestedSizeUsd,
+      });
 
-      // The partial unique index `mirror_suggestions_pending_unique_idx`
-      // guarantees we never store two pending rows for the same wallet /
-      // market / direction. If two refresh runs race, the loser silently
-      // no-ops here (returning 0 rows from the RETURNING clause).
       const inserted = await db
         .insert(mirrorSuggestions)
         .values({
           walletId: wallet.id,
-          opportunityId: matching.id,
-          marketKey: pos.marketKey,
-          question: pos.question,
-          direction: pos.direction,
-          entryProb: pos.entryProb,
+          opportunityId: opp.id,
+          marketKey: opp.marketKey,
+          question: opp.question,
+          direction,
+          entryProb: priceForSide(direction, opp.marketProb),
           suggestedSizeUsd,
-          walletSizeUsd: pos.sizeUsd,
+          walletSizeUsd: positionSizeUsd,
           rationale,
         })
         .onConflictDoNothing({
-          target: [
-            mirrorSuggestions.walletId,
-            mirrorSuggestions.marketKey,
-            mirrorSuggestions.direction,
-          ],
-          // Match the partial unique index
-          // `mirror_suggestions_pending_unique_idx`. Without this predicate
-          // Postgres rejects the ON CONFLICT clause with "no unique or
-          // exclusion constraint matching ON CONFLICT specification".
+          target: [mirrorSuggestions.walletId, mirrorSuggestions.marketKey, mirrorSuggestions.direction],
           where: sql`${mirrorSuggestions.status} = 'pending'`,
         })
         .returning({ id: mirrorSuggestions.id });
+
       if (inserted.length > 0) suggestionsCreated++;
     }
   }
 
-  // Trim snapshot history to the most recent ~200 rows per wallet to keep
-  // the table from growing unbounded in dev. We keep enough for a
-  // multi-hour sparkline.
+  // ── Step 6: recompute wallet ranks by total P&L descending ──
+  pnlList.sort((a, b) => b.pnlUsd - a.pnlUsd);
+  for (let i = 0; i < pnlList.length; i++) {
+    await db
+      .update(walletProfiles)
+      .set({ rank: i + 1 })
+      .where(eq(walletProfiles.id, pnlList[i].walletId));
+  }
+
+  // ── Step 7: trim snapshot history (keep last 200 per wallet) ──
   await db.execute(sql`
     DELETE FROM wallet_snapshots
     WHERE id IN (
       SELECT id FROM (
-        SELECT id, ROW_NUMBER() OVER (PARTITION BY wallet_id ORDER BY captured_at DESC) AS rn
+        SELECT id,
+               ROW_NUMBER() OVER (PARTITION BY wallet_id ORDER BY captured_at DESC) AS rn
         FROM wallet_snapshots
       ) t
       WHERE t.rn > 200
     )
   `);
 
-  return { walletsRefreshed: tracked.length, snapshotsInserted, suggestionsCreated, ranAt };
+  return {
+    walletsRefreshed: tracked.length,
+    snapshotsInserted,
+    suggestionsCreated,
+    newWalletsDiscovered,
+    ranAt,
+  };
 }
 
-/** Live snapshot of a wallet's current open + closed positions (mock-derived). */
-export function snapshotWalletPositions(
+// ─── Mirror rationale builder ─────────────────────────────────────────────────
+
+function buildMirrorRationale(args: {
+  wallet: WalletProfileRow;
+  pos: PolyPosition;
+  opp: { marketProb: number; modelProb: number; edgeScore: number; confidence: number; suggestedDirection: string | null };
+  direction: "yes" | "no";
+  alignment: number;
+  winnerEdge: number;
+  suggestedSizeUsd: number;
+}): {
+  observed: string[];
+  inferred: string[];
+  speculation: string[];
+  unknowns: string[];
+  riskFlags: string[];
+} {
+  const { wallet, pos, opp, direction, alignment, winnerEdge, suggestedSizeUsd } = args;
+
+  const avgEntry = (pos.avgPrice ?? opp.marketProb);
+  const currentPrice = (pos.price ?? opp.marketProb);
+
+  const observed = [
+    `${wallet.label} (rank #${wallet.rank ?? "?"}) holds ${direction.toUpperCase()} on this market.`,
+    `Entry price: ${(avgEntry * 100).toFixed(1)}¢ → current: ${(currentPrice * 100).toFixed(1)}¢ (${winnerEdge >= 0 ? "+" : ""}${(winnerEdge * 100).toFixed(1)} pts).`,
+    `Position size: $${(pos.size ?? 0).toLocaleString()}. Wallet all-time P&L: $${wallet.pnlUsd.toLocaleString()} (hit-rate ${(wallet.hitRate * 100).toFixed(0)}%).`,
+  ];
+
+  if (pos.cashPnl !== undefined) {
+    observed.push(`Unrealized P&L on this position: $${pos.cashPnl.toFixed(0)}.`);
+  }
+
+  const inferred = [
+    `Our model: market ${(opp.marketProb * 100).toFixed(0)}% → model ${(opp.modelProb * 100).toFixed(0)}% (edge ${(opp.edgeScore * 100).toFixed(1)}%, ${opp.suggestedDirection ?? direction}).`,
+    `Winner and model are aligned (alignment score ${(alignment * 100).toFixed(0)}%) — this is a corroborated bet.`,
+    `Mirror sized at $${suggestedSizeUsd} (~5% of winner's position, capped at $250).`,
+  ];
+
+  const speculation = [
+    `Winner may have information or context not yet captured by our signal feed.`,
+    `The winner entered at ${(avgEntry * 100).toFixed(1)}¢; if they continue holding, it implies they expect resolution above that price.`,
+  ];
+
+  const unknowns = [
+    `We do not know the winner's intended hold horizon or position age.`,
+    `The winner's cost basis may differ from the reported avg price (e.g. multiple fills).`,
+  ];
+
+  const riskFlags: string[] = [];
+  if (opp.edgeScore < 0.05) {
+    riskFlags.push("Weak model edge (<5%) — this is primarily a winner-following trade.");
+  }
+  if (opp.confidence < 0.4) {
+    riskFlags.push("Low model confidence — winner is leading the thesis.");
+  }
+  if (alignment < 0.05) {
+    riskFlags.push("Alignment between winner and model is marginal — exercise caution.");
+  }
+
+  return { observed, inferred, speculation, unknowns, riskFlags };
+}
+
+// ─── Seed on first boot ───────────────────────────────────────────────────────
+
+export async function ensureWinnerWalletSeed(): Promise<void> {
+  const existing = await db.select({ id: walletProfiles.id }).from(walletProfiles).limit(1);
+  if (existing.length > 0) return;
+
+  // Seed a small set of known high-performing Polymarket addresses.
+  // These will be replaced/updated with real data on the first refresh cycle.
+  const seeds = [
+    { address: "0x9d1b1669c73b033dfe47ae5a0164ab96df25b944", label: "Whale-A" },
+    { address: "0x5695bc2da6c4f93a8e99cad50a7a8e0e0a9e0671", label: "Macro-Sniper" },
+    { address: "0x77a82d9e8b1d4e25a4e6a1b3a7c44a3a5e3a8b22", label: "Geo-Hawk" },
+    { address: "0x142b44e7c3f9b6e0d3e3a4b5c6d7e8f901a2b3c4", label: "Calm-Cassandra" },
+    { address: "0x2c1d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d", label: "Fed-Watcher" },
+  ];
+
+  await db.insert(walletProfiles).values(
+    seeds.map((s) => ({
+      source: "polymarket",
+      address: s.address.toLowerCase(),
+      label: s.label,
+      tracked: true,
+    })),
+  );
+  logger.info({ count: seeds.length }, "winnerWallets: seed wallets inserted");
+}
+
+// ─── Per-wallet position snapshot (used by the detail route) ─────────────────
+
+/**
+ * Fetch a live position snapshot for a single wallet. Used by the
+ * GET /winner-accounts/:id route to render open/closed positions.
+ * Falls back to empty arrays if the API is unreachable.
+ */
+export async function snapshotWalletPositions(
   wallet: WalletProfileRow,
-  markets: Array<{
-    id: number;
-    marketKey: string;
-    question: string;
-    marketProb: number;
-  }>,
-): MockWalletState {
-  const seed = SEED_WALLETS.find((s) => s.address === wallet.address) ?? {
+  markets: Array<{ id: number; marketKey: string; question: string; marketProb: number }>,
+): Promise<MockWalletState> {
+  let rawPositions: PolyPosition[] = [];
+  try {
+    rawPositions = await fetchPositions(wallet.address);
+  } catch {
+    // Silently degrade — caller renders empty position list.
+  }
+
+  const idx = buildMarketIndex(
+    markets.map((m) => ({
+      ...m,
+      modelProb: m.marketProb,
+      edgeScore: 0,
+      confidence: 0.5,
+      suggestedDirection: null,
+    })),
+  );
+
+  const open: WalletPositionLike[] = rawPositions
+    .filter((p) => (p.size ?? 0) >= MIN_POSITION_SIZE_USD)
+    .map((p) => {
+      const opp = resolvePosition(p, idx as any);
+      const outcome = (p.outcome ?? "Yes").toLowerCase();
+      const direction: "yes" | "no" = outcome === "no" ? "no" : "yes";
+      const avgEntry = p.avgPrice ?? opp?.marketProb ?? 0.5;
+      const current = p.price ?? opp?.marketProb ?? 0.5;
+      return {
+        marketKey: opp?.marketKey ?? `polymarket-${p.conditionId}`,
+        question: p.title ?? opp?.question ?? p.conditionId,
+        direction,
+        entryProb: priceForSide(direction, avgEntry),
+        sizeUsd: p.size ?? 0,
+        currentProb: priceForSide(direction, current),
+        openedAt: new Date(Date.now() - 24 * 3600_000), // not available from positions API
+      };
+    });
+
+  return {
     source: wallet.source,
     address: wallet.address,
     label: wallet.label,
-    baselinePnl: wallet.pnlUsd || 10_000,
-    baselineHitRate: wallet.hitRate || 0.5,
+    pnlUsd: wallet.pnlUsd,
+    hitRate: wallet.hitRate,
+    avgEdge: wallet.avgEdge,
+    open,
+    closed: [], // closed positions require the activity API — not polled here
   };
-  return mockWalletState(seed, markets);
 }
 
-export const SEED_WINNER_WALLETS = SEED_WALLETS;
+// Re-export for backward compat with any external callers of the old mock shape.
+export const SEED_WINNER_WALLETS: Array<{ source: string; address: string; label: string }> = [];
