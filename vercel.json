@@ -4,6 +4,15 @@
   "buildCommand": "pnpm -w run typecheck:libs && pnpm --filter @workspace/cassandra run build",
   "outputDirectory": "artifacts/cassandra/dist/public",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/**/*.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "crons": [
+    { "path": "/api/cron/cycle", "schedule": "* * * * *" }
   ]
 }
