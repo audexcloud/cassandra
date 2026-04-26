@@ -1,0 +1,8 @@
+{
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm run typecheck:libs && pnpm --filter @workspace/cassandra run build",
+  "outputDirectory": "artifacts/cassandra/dist/public",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
